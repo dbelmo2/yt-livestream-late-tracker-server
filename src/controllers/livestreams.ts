@@ -1,0 +1,1 @@
+exports.getLivestreams = async (req: Request, res: Response) => {};
