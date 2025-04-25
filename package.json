@@ -6,7 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node dist/index.js",
-    "dev": "nodemon --watch \"src/**/*.ts\" --exec ts-node src/index.ts",
+    "dev": "dotenv -e .env -- nodemon --watch \"src/**/*.ts\" --exec ts-node src/index.ts",
     "build": "tsc",
     "lint": "eslint . --ext \"src/**/*.ts\"",
     "lint:fix": "eslint . --ext \"src/**/*.ts\" --fix"
@@ -14,13 +14,17 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "express": "^5.1.0",
+    "googleapis": "^148.0.0",
     "helmet": "^8.1.0",
+    "mongoose": "^8.14.0",
     "winston": "^3.17.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.1",
     "@types/node": "^22.14.1",
     "dotenv": "^16.5.0",
+    "dotenv-cli": "^8.0.0",
     "eslint": "^9.25.1",
     "install": "^0.13.0",
     "nodemon": "^3.1.10",

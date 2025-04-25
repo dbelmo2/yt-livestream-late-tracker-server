@@ -1,7 +1,14 @@
 import express from 'express';
 import helmet from 'helmet';
-import winston from 'winston';
-import routes from './routes/routes'; // Adjust the extension based on your TypeScript setup
+
+import routes from './routes/index'; 
+import logger from './utils/logger'; 
+import connectDB from './config/database';
+
+import { insertLivestreamDetails, updateStats } from './services/youtube';
+
+// connect to MongoDB
+connectDB()
 
 // Initialize Express app
 const app = express();
@@ -10,18 +17,11 @@ const app = express();
 app.use(helmet());
 app.use(express.json());
 
-// Logger setup with Winston
-const logger = winston.createLogger({
-    level: 'info',
-    format: winston.format.json(),
-    transports: [
-        new winston.transports.Console(),
-        new winston.transports.File({ filename: 'server.log' }),
-    ],
-});
-
 // Routes
 app.use('/api', routes);
+
+// TODO: Test GET stats endpoint
+
 
 // Start the server
 const PORT = process.env.PORT || 3000;
