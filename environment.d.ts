@@ -2,11 +2,10 @@ declare global {
     namespace NodeJS {
       interface ProcessEnv {
         YOUTUBE_API_KEY: string;
-        MONGO_URL: string;
-        MONGO_DB: string;
-        MONGO_COLLECTION: string;
-        MONGO_URI: string;
-        MONGO_PORT: string;
+        MONGODB_URI: string;
+        YOUTUBE_CHANNEL_ID: string;
+        BASE_URL: string;
+        WEBHOOK_SECRET: string;
       }
     }
   }

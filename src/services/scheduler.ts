@@ -5,8 +5,8 @@ import logger from '../utils/logger';
 import youtube from '../config/youtube';
 import Livestream from '../models/livestream';
 import Stats from '../models/stats';
-import { FailedLivestream } from '../models/FailedLivestreams';
 import { calculateLateTime } from '../utils/time';
+import { FailedLivestream } from '../models/failedLivestreams';
 
 
 
@@ -22,6 +22,7 @@ export const processLivestream = async (videoId: string): Promise<void> => {
         const { scheduledStartTime, actualStartTime } = livestream.liveStreamingDetails || {};
         if (!scheduledStartTime || !actualStartTime) {
           logger.warn(`Missing start times for livestream ${videoId}. Skipping.`);
+          await FailedLivestream.deleteOne({ videoId });
           return;
         }
         const lateTime = calculateLateTime(scheduledStartTime, actualStartTime);
@@ -70,7 +71,7 @@ export const processLivestream = async (videoId: string): Promise<void> => {
 export const setupScheduler = (): void => {
   // PubSubHubbub subscription refresh (every 4 days)
   cron.schedule('0 0 */4 * *', () => {
-    subscribeToChannel('YOUR_CHANNEL_ID', `${config.baseUrl}/webhooks/youtube`);
+    subscribeToChannel(process.env.YOUTUBE_CHANNEL_ID, `${config.baseUrl}/api/webhooks/youtube`);
     logger.info('Refreshed PubSubHubbub subscription');
   }, { timezone: 'America/Chicago' });
 
@@ -81,18 +82,24 @@ export const setupScheduler = (): void => {
         part: ['snippet'],
         channelId: 'YOUR_CHANNEL_ID',
         eventType: 'completed',
-        type: 'video',
+        type: ['video'],
         maxResults: 50,
       });
-      const videoIds = response.data.items.map((item) => item.id.videoId);
+      const videoIds = (response.data.items ?? []).map((item) => item?.id?.videoId);
       for (const videoId of videoIds) {
-        const existing = await Livestream.findOne({ videoId });
-        if (!existing) {
-          await processLivestream(videoId);
+        if (videoId) {
+          const existing = await Livestream.findOne({ videoId });
+          if (!existing) {
+            await processLivestream(videoId);
+          }
         }
       }
     } catch (error) {
-      logger.error(`Polling error: ${error.message}`, { error });
+      if (error instanceof Error) {
+        logger.error(`Polling error: ${error.message}`, { error });
+      } else {
+        logger.error('Polling error: Unknown error type', { error });
+      }
     }
   }, { timezone: 'America/Chicago' });
 
@@ -111,7 +118,11 @@ export const setupScheduler = (): void => {
         }
       }
     } catch (error) {
-      logger.error(`Retry scheduler error: ${error.message}`, { error });
+      if (error instanceof Error) {
+        logger.error(`Retry scheduler error: ${error.message}`, { error });
+      } else {
+        logger.error('Retry scheduler error: Unknown error type', { error });
+      }
     }
   }, { timezone: 'America/Chicago' });
 };

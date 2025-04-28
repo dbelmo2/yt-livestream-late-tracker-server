@@ -1,6 +1,6 @@
 import express from 'express';
-import { handleGetLivestreams } from '../controllers/livestreams';
+import { getLivestreams } from '../controllers/livestreams';
 
 const router = express.Router();
-router.get('/', handleGetLivestreams);
+router.get('/', getLivestreams);
 export default router;

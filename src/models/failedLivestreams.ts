@@ -16,4 +16,4 @@ const FailedLivestreamSchema: Schema = new Schema({
   createdAt: { type: Date, default: Date.now, expires: '3d' }, // Auto-delete after 3 days
 });
 
-export const FailedLivestream = mongoose.model<IFailedLivestream>('FailedLivestream', FailedLivestreamSchema);
+export const FailedLivestream = mongoose.model<IFailedLivestream>('failedLivestream', FailedLivestreamSchema);

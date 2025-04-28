@@ -1,5 +1,4 @@
 import logger from '../utils/logger';
-import { ILivestreamItem } from '../types/youtube';
 
 
 // TODO: Review this code
