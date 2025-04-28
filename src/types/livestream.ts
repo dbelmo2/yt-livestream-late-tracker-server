@@ -1,8 +1,7 @@
-export interface Livestream {
+export interface ILivestream {
     videoId: string;
     scheduledStartTime: Date;
-    actualStartTime: Date;
+    actualStartTime?: Date;
     lateTime: number;
-    date: string;
     title: string;
 }

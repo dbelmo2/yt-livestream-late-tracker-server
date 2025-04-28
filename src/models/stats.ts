@@ -3,7 +3,7 @@ import { Schema, model } from 'mongoose';
 const Stats = new Schema({
     totalLateTime: Number,
     streamCount: Number,
-    lastUpdateDate: Date
+    lastUpdateDate: Date,
 });
 
 export default model('stats', Stats);

@@ -5,7 +5,6 @@ export const livestream = new Schema({
     scheduledStartTime: Date,
     actualStartTime: Date,
     lateTime: Number,
-    date: String,
     title: String,
 });
 

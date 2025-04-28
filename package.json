@@ -14,15 +14,22 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "cors": "^2.8.5",
     "express": "^5.1.0",
+    "express-rate-limit": "^7.5.0",
     "googleapis": "^148.0.0",
     "helmet": "^8.1.0",
     "mongoose": "^8.14.0",
-    "winston": "^3.17.0"
+    "node-cron": "^3.0.3",
+    "winston": "^3.17.0",
+    "xml2js": "^0.6.2"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.17",
     "@types/express": "^5.0.1",
     "@types/node": "^22.14.1",
+    "@types/node-cron": "^3.0.11",
+    "@types/xml2js": "^0.4.14",
     "dotenv": "^16.5.0",
     "dotenv-cli": "^8.0.0",
     "eslint": "^9.25.1",

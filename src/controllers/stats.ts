@@ -1,14 +1,17 @@
-import { getStats } from '../services/youtube';
-import logger from '../utils/logger';
 import { Request, Response } from 'express';
+import Stats from '../models/stats';
+import { NotFoundError } from '../utils/errors';
 
-exports.getStats = async (req: Request, res: Response) => {
+export const getStats = async (req: Request, res: Response): Promise<void> => {
     try {
-        logger.info('Processing GET stats request...');
-        const stats = await getStats();
-        res.status(200).json(stats);
+      const stats = await Stats.findOne().catch((err) => {
+        throw new Error(`Database query failed: ${err.message}`);
+      });
+      if (!stats) {
+        throw new NotFoundError('No stats found');
+      }
+      res.json(stats);
     } catch (error) {
-        logger.error('Unable to complete GET stats request', error);
-        res.status(500).json({ error: 'Internal Server Error' });
+      throw error instanceof Error ? error : new Error('Unknown error in getStats');
     }
 };
