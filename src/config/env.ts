@@ -4,4 +4,5 @@ export const config = {
     youtubeApiKey: process.env.YOUTUBE_API_KEY || '',
     baseUrl: process.env.BASE_URL || 'http://localhost:5000',
     webhookSecret: process.env.WEBHOOK_SECRET || 'your-secret-key',
+    maxRetries: parseInt(process.env.MAX_RETRIES || '5'),
 };

@@ -16,8 +16,8 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(helmet());
-app.use(express.text({ type: 'application/xml' })); // For XML webhook payloads
 app.use(express.json());
+app.use(express.text({ type: 'application/xml' }));
 app.use(errorMiddleware);
 // Apply rate-limiting to all routes except /api/webhooks
 app.use('/api', (req, res, next) => {

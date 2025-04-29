@@ -46,6 +46,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
 
   if (req.method === 'POST') {
     if (!verifySignature(req)) {
+      logger.warn('Invalid signature in webhook request', { headers: req.headers });
       throw new ApiError('Invalid signature', 403);
     }
 

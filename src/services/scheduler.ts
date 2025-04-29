@@ -50,7 +50,7 @@ export const processLivestream = async (videoId: string): Promise<void> => {
       } else {
         errorMessage = 'Unknown error type';
       }
-      logger.error(`Failed to process livestream ${videoId}: ${errorMessage}`, { error });
+      logger.error(`Failed to process livestream ${videoId}: ${errorMessage}`);
       // Save to FailedLivestreams
       await FailedLivestream.findOneAndUpdate(
         { videoId },
@@ -96,9 +96,9 @@ export const setupScheduler = (): void => {
       }
     } catch (error) {
       if (error instanceof Error) {
-        logger.error(`Polling error: ${error.message}`, { error });
+        logger.error(`Polling error: ${error.message}`);
       } else {
-        logger.error('Polling error: Unknown error type', { error });
+        logger.error('Polling error: Unknown error type');
       }
     }
   }, { timezone: 'America/Chicago' });
@@ -106,13 +106,13 @@ export const setupScheduler = (): void => {
   // Retry failed livestreams (every hour)
   cron.schedule('0 * * * *', async () => {
     try {
-      const failed = await FailedLivestream.find({ retryCount: { $lt: 3 } }).limit(10); // Max 5 retries, process 10 at a time
+      const failed = await FailedLivestream.find({ retryCount: { $lt: config.maxRetries } }).limit(10); // Max 5 retries, process 10 at a time
       for (const entry of failed) {
         try {
           await processLivestream(entry.videoId);
         } catch (error) {
           // Error already logged and updated in processLivestream
-          if (entry.retryCount + 1 >= 3) {
+          if (entry.retryCount + 1 >= config.maxRetries) {
             logger.warn(`Max retries reached for livestream ${entry.videoId}`);
           }
         }
