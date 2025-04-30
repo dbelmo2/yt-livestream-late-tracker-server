@@ -10,6 +10,7 @@ import { FailedLivestream } from '../models/failedLivestreams';
 
 
 
+
 // TODO: Check if this can be replaced with the already existing function in the webhook controller
 export const processLivestream = async (videoId: string): Promise<void> => {
     try {
@@ -17,32 +18,43 @@ export const processLivestream = async (videoId: string): Promise<void> => {
         part: ['snippet,liveStreamingDetails'],
         id: [videoId],
       });
+      
       const livestream = response?.data?.items?.[0] ?? null;
-      if (livestream && livestream?.snippet?.liveBroadcastContent !== 'none') {
-        const { scheduledStartTime, actualStartTime } = livestream.liveStreamingDetails || {};
-        if (!scheduledStartTime || !actualStartTime) {
-          logger.warn(`Missing start times for livestream ${videoId}. Skipping.`);
+
+      if (livestream) {
+        const existing = await Livestream.findOne({ videoId });
+        if (existing && livestream?.snippet?.title && livestream?.snippet?.title !== existing?.title) {
+          await Livestream.updateOne(
+            { videoId },
+            { title: livestream?.snippet?.title }
+          );
+        } else if (livestream?.snippet?.liveBroadcastContent !== 'none') {
+          const { scheduledStartTime, actualStartTime } = livestream.liveStreamingDetails || {};
+          if (!scheduledStartTime || !actualStartTime) {
+            logger.warn(`Missing start times for livestream ${videoId}. Skipping.`);
+            await FailedLivestream.deleteOne({ videoId });
+            return;
+          }
+          const lateTime = calculateLateTime(scheduledStartTime, actualStartTime);
+          const title = livestream?.snippet?.title || 'No title available';
+          await Livestream.create({
+            videoId,
+            scheduledStartTime,
+            actualStartTime,
+            lateTime,
+            title,
+          });
+          await Stats.updateOne(
+            {},
+            { $inc: { totalLateTime: lateTime, streamCount: 1 }, lastUpdateDate: new Date() },  
+            { upsert: true }
+          );
+          logger.info(`Processed livestream ${videoId}`);
+          // Remove from FailedLivestreams if it exists
           await FailedLivestream.deleteOne({ videoId });
-          return;
         }
-        const lateTime = calculateLateTime(scheduledStartTime, actualStartTime);
-        const title = livestream?.snippet?.title || 'No title available';
-        await Livestream.create({
-          videoId,
-          scheduledStartTime,
-          actualStartTime,
-          lateTime,
-          title,
-        });
-        await Stats.updateOne(
-          {},
-          { $inc: { totalLateTime: lateTime, streamCount: 1 } },
-          { upsert: true }
-        );
-        logger.info(`Processed livestream ${videoId}`);
-        // Remove from FailedLivestreams if it exists
-        await FailedLivestream.deleteOne({ videoId });
       }
+
     } catch (error) {
       let errorMessage;
       if (error instanceof Error) {
@@ -71,7 +83,7 @@ export const processLivestream = async (videoId: string): Promise<void> => {
 export const setupScheduler = (): void => {
   // PubSubHubbub subscription refresh (every 4 days)
   cron.schedule('0 0 */4 * *', () => {
-    subscribeToChannel(process.env.YOUTUBE_CHANNEL_ID, `${config.baseUrl}/api/webhooks/youtube`);
+    subscribeToChannel(config.youtubeChannelId, `${config.baseUrl}/api/webhooks/youtube`);
     logger.info('Refreshed PubSubHubbub subscription');
   }, { timezone: 'America/Chicago' });
 

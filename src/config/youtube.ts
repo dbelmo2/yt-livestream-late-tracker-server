@@ -1,8 +1,8 @@
 import { google } from 'googleapis';
-
+import { config } from '../config/env';
 
 
 export default google.youtube({
     version: 'v3',
-    auth: process.env.YOUTUBE_API_KEY,
+    auth: config.youtubeApiKey,
 });

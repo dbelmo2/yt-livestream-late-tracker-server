@@ -6,6 +6,7 @@ import logger from './utils/logger';
 import connectDB from './config/database';
 import { errorMiddleware } from './middleware/error';
 import { rateLimiter }  from './middleware/rateLimit'; // Rate-limiting middleware
+import { config } from './config/env'; // Configuration settings
 
 // connect to MongoDB
 connectDB()
@@ -32,7 +33,7 @@ app.use('/api', routes);
 
 
 // Start the server
-const PORT = process.env.PORT || 3000;
+const PORT = config.port || 3000;
 app.listen(PORT, () => {
     logger.info(`Server is running on port ${PORT}`);
 });

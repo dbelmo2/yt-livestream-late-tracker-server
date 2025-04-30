@@ -122,4 +122,32 @@ describe('Scheduler', () => {
     await pollingJob();
     expect(await Livestream.countDocuments()).toBe(0);
   });
+
+  it('Should update only the title if the livestream is already in the Livestream collection', async () => {
+    (youtube.videos.list as jest.Mock).mockResolvedValue({
+      data: {
+        items: [{
+          snippet: { title: 'Updated Title', liveBroadcastContent: 'live' },
+          liveStreamingDetails: {
+            scheduledStartTime: '2025-04-27T10:00:00Z',
+            actualStartTime: '2025-04-27T10:05:00Z',
+          },
+        }],
+      },
+    });
+    await Livestream.create({
+      videoId: 'test123',
+      scheduledStartTime: '2025-04-27T10:00:00Z',
+      actualStartTime: '2025-04-27T10:05:00Z',
+      lateTime: 300,
+      title: 'Old Title',
+    });
+    await processLivestream('test123');
+    const livestream = await Livestream.findOne({ videoId: 'test123' });
+    expect(livestream?.title).toBe('Updated Title');
+    expect(livestream?.lateTime).toBe(300); // Should not change lateTime
+    expect(livestream?.scheduledStartTime).toBe('2025-04-27T10:00:00Z'); // Should not change scheduledStartTime
+    expect(livestream?.actualStartTime).toBe('2025-04-27T10:05:00Z'); // Should not change actualStartTime
+
+  });
 });

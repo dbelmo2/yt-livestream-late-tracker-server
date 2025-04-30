@@ -1,5 +1,5 @@
 import logger from '../utils/logger';
-
+import { config } from '../config/env';
 
 // TODO: Review this code
 
@@ -11,7 +11,7 @@ export const subscribeToChannel = async (channelId: string, callbackUrl: string)
     'hub.topic': topicUrl,
     'hub.callback': callbackUrl,
     'hub.verify': 'sync',
-    'hub.secret': process.env.WEBHOOK_SECRET || 'your-secret-key',
+    'hub.secret': config.webhookSecret || 'your-secret-key',
   };
   const formBody = Object.entries(params)
     .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
