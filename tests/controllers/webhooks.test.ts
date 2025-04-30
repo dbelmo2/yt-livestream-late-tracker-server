@@ -8,7 +8,6 @@ import youtube from '../../src/config/youtube';
 import crypto from 'crypto';
 import { config } from '../../src/config/env';
 import { errorMiddleware } from '../../src/middleware/error';
-
 jest.mock('../../src/config/youtube');
 jest.mock('../../src/utils/logger');
 
@@ -23,6 +22,12 @@ describe('Webhook Controller', () => {
     app.use(errorMiddleware)
 
   });
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    await Livestream.deleteMany({});
+  });
+
 
   afterEach(async () =>  {
     await FailedLivestream.deleteMany({});
@@ -48,7 +53,6 @@ describe('Webhook Controller', () => {
       .get('/api/webhooks/youtube')
       .query({ 'hub.mode': 'subscribe' });
     expect(response.status).toBe(400);
-    console.log('Response body:', response.body); // Log the response body for debugging
     expect(response.body).toEqual({ error: 'Invalid verification request' });
   });
 
@@ -69,7 +73,7 @@ describe('Webhook Controller', () => {
   });
 
   it('should return 204 and process valid XML POST', async () => {
-    const payload = '<?xml version="1.0"?><feed><entry><yt:videoId>abc123</yt:videoId></entry></feed>';
+    const payload = '<?xml version="1.0"?><feed xmlns:yt="http://www.youtube.com/xml/schemas/2015"><entry><yt:videoId>abc123</yt:videoId></entry></feed>';
     const signature = `sha1=${crypto
       .createHmac('sha1', config.webhookSecret)
       .update(payload)
@@ -96,6 +100,7 @@ describe('Webhook Controller', () => {
     expect(response.body).toEqual({});
     const livestream = await Livestream.findOne({ videoId: 'abc123' });
     expect(livestream).toBeTruthy();
+    console.log(livestream, 'livestream failing test');
     expect(livestream?.lateTime).toBe(300); // 5 minutes late
     const stats = await Stats.findOne({});
     expect(stats?.totalLateTime).toBe(300);

@@ -1,6 +1,5 @@
 import { Request, Response } from 'express';
 import Stats from '../models/stats';
-import { NotFoundError } from '../utils/errors';
 
 export const getStats = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -8,7 +7,8 @@ export const getStats = async (req: Request, res: Response): Promise<void> => {
         throw new Error(`Database query failed: ${err.message}`);
       });
       if (!stats) {
-        throw new NotFoundError('No stats found');
+        res.json({ streamCount: 0, totalLateTime: 0 });
+        return;
       }
       res.json(stats);
     } catch (error) {

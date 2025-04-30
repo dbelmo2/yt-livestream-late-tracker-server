@@ -80,7 +80,7 @@ export const setupScheduler = (): void => {
     try {
       const response = await youtube.search.list({
         part: ['snippet'],
-        channelId: 'YOUR_CHANNEL_ID',
+        channelId: config.youtubeChannelId,
         eventType: 'completed',
         type: ['video'],
         maxResults: 50,

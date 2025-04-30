@@ -54,6 +54,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
       const result: AtomFeed = await new Promise((resolve, reject) => {
         parseString(req.body, (err, parsed) => {
           if (err) {
+            console.log('Error parsing XML:', err);
             reject(new ApiError('Invalid XML', 400));
           } else {
             resolve(parsed);

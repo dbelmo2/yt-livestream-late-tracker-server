@@ -5,4 +5,5 @@ export const config = {
     baseUrl: process.env.BASE_URL || 'http://localhost:5000',
     webhookSecret: process.env.WEBHOOK_SECRET || 'your-secret-key',
     maxRetries: parseInt(process.env.MAX_RETRIES || '5'),
+    youtubeChannelId: process.env.YOUTUBE_CHANNEL_ID || 'your-channel-id',
 };
