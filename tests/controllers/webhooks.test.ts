@@ -16,7 +16,7 @@ describe('Webhook Controller', () => {
 
   beforeAll(async () => {
     app = express();
-    app.use(express.text({ type: 'application/xml' }));
+    app.use(express.text({ type: 'application/atom+xml' }));
     app.post('/api/webhooks/youtube', handleWebhook);
     app.get('/api/webhooks/youtube', handleWebhook);
     app.use(errorMiddleware)
@@ -65,7 +65,7 @@ describe('Webhook Controller', () => {
       .digest('hex')}`;
     const response = await request(app)
       .post('/api/webhooks/youtube')
-      .set('Content-Type', 'application/xml')
+      .set('Content-Type', 'application/atom+xml')
       .set('X-Hub-Signature', signature)
       .send(payload);
     expect(response.status).toBe(403);
@@ -92,7 +92,7 @@ describe('Webhook Controller', () => {
 
     const response = await request(app)
       .post('/api/webhooks/youtube')
-      .set('Content-Type', 'application/xml')
+      .set('Content-Type', 'application/atom+xml')
       .set('X-Hub-Signature', signature)
       .send(payload);
 
@@ -116,7 +116,7 @@ describe('Webhook Controller', () => {
 
     const response = await request(app)
       .post('/api/webhooks/youtube')
-      .set('Content-Type', 'application/xml')
+      .set('Content-Type', 'application/atom+xml')
       .set('X-Hub-Signature', signature)
       .send(payload);
 
@@ -135,7 +135,7 @@ describe('Webhook Controller', () => {
 
     const response = await request(app)
       .post('/api/webhooks/youtube')
-      .set('Content-Type', 'application/xml')
+      .set('Content-Type', 'application/atom+xml')
       .set('X-Hub-Signature', signature)
       .send(payload);
 

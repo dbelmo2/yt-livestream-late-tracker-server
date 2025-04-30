@@ -1,8 +1,8 @@
 import { Schema, model } from 'mongoose';
 
 const Stats = new Schema({
-    totalLateTime: Number,
-    streamCount: Number,
+    streamCount: { type: Number, default: 0 },
+    totalLateTime: { type: Number, default: 0 },
     lastUpdateDate: Date,
 });
 

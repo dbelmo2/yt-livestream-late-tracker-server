@@ -7,7 +7,7 @@ import Livestream from '../models/livestream';
 import Stats from '../models/stats';
 import { calculateLateTime } from '../utils/time';
 import { FailedLivestream } from '../models/failedLivestreams';
-
+import { ApiError } from '../utils/errors';
 
 
 
@@ -18,7 +18,7 @@ export const processLivestream = async (videoId: string): Promise<void> => {
         part: ['snippet,liveStreamingDetails'],
         id: [videoId],
       });
-      
+
       const livestream = response?.data?.items?.[0] ?? null;
 
       if (livestream) {
@@ -28,6 +28,8 @@ export const processLivestream = async (videoId: string): Promise<void> => {
             { videoId },
             { title: livestream?.snippet?.title }
           );
+          logger.info(`Updated title for livestream ${videoId} to ${livestream?.snippet?.title}`);
+          return;
         } else if (livestream?.snippet?.liveBroadcastContent !== 'none') {
           const { scheduledStartTime, actualStartTime } = livestream.liveStreamingDetails || {};
           if (!scheduledStartTime || !actualStartTime) {
@@ -52,8 +54,14 @@ export const processLivestream = async (videoId: string): Promise<void> => {
           logger.info(`Processed livestream ${videoId}`);
           // Remove from FailedLivestreams if it exists
           await FailedLivestream.deleteOne({ videoId });
+          logger.info(`Successfully processed livestream ${videoId} and updated stats`);
+          return;
         }
+      } else {
+        throw new ApiError(`Livestream not found in YouTube API video.list for ${videoId}`, 500);
       }
+
+      logger.info(`No Action taken for livestream ${videoId}`);
 
     } catch (error) {
       let errorMessage;
@@ -79,13 +87,16 @@ export const processLivestream = async (videoId: string): Promise<void> => {
   };
 
 
-// TODO: Fix various errors below
+// TODO: Fix various errors below 
 export const setupScheduler = (): void => {
   // PubSubHubbub subscription refresh (every 4 days)
-  cron.schedule('0 0 */4 * *', () => {
-    subscribeToChannel(config.youtubeChannelId, `${config.baseUrl}/api/webhooks/youtube`);
+
+
+  
+  cron.schedule('0 0 */4 * *', async () => {
+    await subscribeToChannel(config.youtubeChannelId, `${config.baseUrl}/api/webhooks/youtube`);
     logger.info('Refreshed PubSubHubbub subscription');
-  }, { timezone: 'America/Chicago' });
+  }, { timezone: 'America/Chicago',  });
 
   // Fallback polling for missed livestreams (daily at 2pm CST)
   cron.schedule('0 14 * * *', async () => {

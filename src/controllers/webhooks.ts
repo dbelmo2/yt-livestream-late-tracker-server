@@ -15,16 +15,22 @@ interface AtomFeed {
   };
 }
 
-const verifySignature = (req: Request): boolean => {
-  const signature = req.headers['x-hub-signature'] as string;
-  if (!signature) {
-    logger.warn('Missing X-Hub-Signature header');
-    return false;
+const verifySignature = (req: Request) => {
+  try {
+    const signature = req.headers['x-hub-signature'] as string;
+    if (!signature) {
+      logger.warn('Missing X-Hub-Signature header');
+      return false;
+    }
+    const hmac = crypto.createHmac('sha1', config.webhookSecret);
+    hmac.update(req.body);
+    const computed = `sha1=${hmac.digest('hex')}`;
+    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(computed));
+  } catch (error) {
+    const errorMessage = error instanceof Error ? `An unexpected error was thrown while verifying signature: ${error.message}` : 'Unknown error in signature verification';
+    logger.error(errorMessage);
+    throw new ApiError(errorMessage, 500);
   }
-  const hmac = crypto.createHmac('sha1', config.webhookSecret);
-  hmac.update(req.body);
-  const computed = `sha1=${hmac.digest('hex')}`;
-  return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(computed));
 };
 
 
@@ -45,6 +51,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
   }
 
   if (req.method === 'POST') {
+  
     if (!verifySignature(req)) {
       logger.warn('Invalid signature in webhook request', { headers: req.headers });
       throw new ApiError('Invalid signature', 403);

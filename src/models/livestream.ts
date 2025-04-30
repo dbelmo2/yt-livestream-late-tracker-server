@@ -1,7 +1,7 @@
 import { Schema, model } from 'mongoose';
 
 export const livestream = new Schema({
-    videoId: String,
+    videoId: { type: String, required: true, unique: true },    
     scheduledStartTime: Date,
     actualStartTime: Date,
     lateTime: Number,
