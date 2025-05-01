@@ -104,7 +104,7 @@ export const handleInitialize = async (req: Request, res: Response): Promise<voi
           scheduledStartTime: new Date(Date.parse(broadcast.liveStreamingDetails.scheduledStartTime)),
           actualStartTime: new Date(Date.parse(broadcast.liveStreamingDetails.actualStartTime)),
           lateTime,
-          title: broadcast?.snippet?.title || 'Title not available',
+          title: broadcast?.snippet?.title || 'No title available',
         });
         continue;
       }
@@ -115,7 +115,7 @@ export const handleInitialize = async (req: Request, res: Response): Promise<voi
   } while(nextPageToken);
   streamCount = livestreamDocumnets.length;
   // Once we have all the livestream documents, we can perform a bulk insert
-  // which will gracefully handle duplicates and other errors
+  // which will gracefully handle duplicates
   await gracefulBulkInsert(livestreamDocumnets as unknown as ILivestream[]);
       
   // Update stats
