@@ -17,6 +17,7 @@ interface AtomFeed {
 
 const verifySignature = (req: Request) => {
   try {
+    logger.debug('Verifying signature for webhook request', { headers: req.headers });
     const signature = req.headers['x-hub-signature'] as string;
     if (!signature) {
       logger.warn('Missing X-Hub-Signature header');

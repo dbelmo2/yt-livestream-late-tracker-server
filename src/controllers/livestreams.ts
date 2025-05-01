@@ -5,6 +5,7 @@ import logger from '../utils/logger';
 
 export const getLivestreams = async (req: Request, res: Response): Promise<void> => {
   if (req.params.videoId) {
+    logger.debug(`Fetching livestream with videoId: ${req.params.videoId}`);
     const livestream = await Livestream.findOne({ videoId: req.params.videoId }).catch((err) => {
       throw new ApiError(`Database query failed: ${err.message}`, 500);
     });
@@ -16,10 +17,12 @@ export const getLivestreams = async (req: Request, res: Response): Promise<void>
     logger.info(`Retrieved livestream ${req.params.videoId}`);
     res.status(200).json(livestream);
   } else {
-
+    logger.debug('Fetching livestreams with pagination');
     // Fetch paginated livestreams using skip and limit
     const skip = req.query.skip ? parseInt(req.query.skip as string) : 0;
     const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+
+    logger.debug(`Pagination parameters: skip=${skip}, limit=${limit}`);
 
     if (isNaN(skip) || skip < 0) {
       throw new ValidationError('Invalid skip parameter: must be a non-negative number');
