@@ -42,19 +42,22 @@ export const processLivestream = async (videoId: string): Promise<void> => {
           const lateTime = calculateLateTime(scheduledStartTime, actualStartTime);
           logger.info(`Calculated late time for livestream ${videoId}: ${lateTime}s or ${formatSecondsToHumanReadable(lateTime)}`);
           const title = livestream?.snippet?.title || 'No title available';
-          await Livestream.create({
+
+
+          const livestreamDocument = {
             videoId,
             scheduledStartTime,
             actualStartTime,
             lateTime,
             title,
-          });
+          };
+          await Livestream.create(livestreamDocument);
           await Stats.updateOne(
             {},
             { $inc: { totalLateTime: lateTime, streamCount: 1 }, lastUpdateDate: new Date() },  
             { upsert: true }
           );
-          logger.info(`Successfully updated stats for livestream ${videoId}`);
+          logger.info(`Livestream '${title}' saved and stats updated.`);
           // Remove from FailedLivestreams if it exists
           await FailedLivestream.deleteOne({ videoId });
           return;
