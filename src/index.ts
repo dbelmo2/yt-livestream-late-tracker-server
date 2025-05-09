@@ -1,53 +1,87 @@
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
-import routes from './routes/index'; 
-import logger from './utils/logger'; 
+import http from 'http';
+import { Server as SocketIOServer } from 'socket.io';
+
+import routes from './routes/index';
+import logger from './utils/logger';
 import connectDB from './config/database';
 import { errorMiddleware } from './middleware/error';
-import { rateLimiter }  from './middleware/rateLimit'; // Rate-limiting middleware
-import { config } from './config/env'; // Configuration settings
-import { setupScheduler } from './services/scheduler'; // Scheduler for periodic tasks
+import { rateLimiter } from './middleware/rateLimit';
+import { config } from './config/env';
+import { setupScheduler } from './services/scheduler';
 import { subscribeToChannel } from './services/youtube';
+import MatchMaker, { Region } from './services/MatchMaker';
 
-// connect to MongoDB
-connectDB()
+connectDB();
 
-// Initialize Express app
 const app = express();
+const server = http.createServer(app); // 🔄 create HTTP server for Socket.IO to attach to
 
-app.set('trust proxy', 1); // trust first proxy (typical for Heroku/ngrok)
+const io = new SocketIOServer(server, {
+  cors: {
+    origin: '*', // adjust for production
+    methods: ['GET', 'POST']
+  }
+});
 
-// Middleware
+app.set('trust proxy', 1);
 app.use(cors());
 app.use(helmet());
 app.use(express.json());
 app.use(express.text({ type: 'application/atom+xml' }));
 app.use(errorMiddleware);
 
-// Apply rate-limiting to all routes except /api/webhooks
+// ✅ Rate limiting (except /webhooks)
 app.use('/api', (req, res, next) => {
-    if (req.path.startsWith('/webhooks')) {
-      return next(); 
-    }
-    return rateLimiter(req, res, next);
+  if (req.path.startsWith('/webhooks')) return next();
+  return rateLimiter(req, res, next);
 });
 
-// Routes
 app.use('/api', routes);
 
+// ✅ Socket.IO Matchmaking
+io.on('connection', (socket) => {
+  logger.info(`Socket connected: ${socket.id}`);
 
-// Start the server
-const PORT = config.port || 3000;
-app.listen(PORT, () => {
-    logger.info(`Server is running on port ${PORT}`);
+  socket.on('joinQueue', (region: string) => {
+    logger.info(`Socket ${socket.id} emitted joinQueue`);
+    logger.info('')
+    if (['NA', 'EU', 'ASIA'].includes(region)) {
+      logger.info(`Valid region: ${region}, queuing player`);
+      MatchMaker.enqueuePlayer({
+        id: socket.id,
+        socket,
+        region: region as Region,
+        enqueuedAt: Date.now()
+      });
+      socket.emit('queued', { region });
+    } else {
+
+      socket.emit('error', { message: 'Invalid region' });
+    }
+    socket.emit('queued', { region });
+  });
+
+  socket.on('disconnect', () => {
+    logger.info(`Socket disconnected: ${socket.id}`);
+    // You can notify matchmaker if needed
+  });
 });
 
+const PORT = config.port || 3000;
+server.listen(PORT, () => {
+  logger.info(`Server is running on port ${PORT}`);
+});
 
-
-
+/*
 (async () => {
-    logger.info('Subscribing to YouTube channel...');
-    await subscribeToChannel(config.youtubeChannelId, `${config.baseUrl}/api/webhooks/youtube`);
-    setupScheduler();
+  logger.info('Subscribing to YouTube channel...');
+  await subscribeToChannel(
+    config.youtubeChannelId,
+    `${config.baseUrl}/api/webhooks/youtube`
+  );
+  setupScheduler();
 })();
+*/

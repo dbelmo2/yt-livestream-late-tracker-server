@@ -10,7 +10,9 @@ import { FailedLivestream } from '../models/failedLivestreams';
 import { ApiError } from '../utils/errors';
 import { formatSecondsToHumanReadable } from '../utils/time';
 
-
+// TODO: Handle duplicate key MongoDB error after a livestream goes live. 
+// These errors should be handled gracefully by simply logging a warning and NOT inserting into the failedLivestreams collection
+// Because the duplicate comes almost immediately after the valid livestream, the check below does not work... 
 export const processLivestream = async (videoId: string): Promise<void> => {
     try {
       logger.debug(`Processing livestream with videoId: ${videoId}`);
