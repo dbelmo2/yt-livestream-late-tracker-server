@@ -1,6 +1,14 @@
 import { Socket } from 'socket.io';
 import { Projectile } from '../game-logic/Projectile';
 import logger from '../utils/logger';
+import { 
+  testForAABB,
+  PROJECTILE_WIDTH,
+  PROJECTILE_HEIGHT,
+  PLAYER_WIDTH,
+  PLAYER_HEIGHT
+} from '../game-logic/collision';
+
 
 type Region = 'NA' | 'EU' | 'ASIA' | 'GLOBAL';
 
@@ -62,13 +70,13 @@ export class Match {
         });
     
         // Listen for shooting
-        socket.on('shoot', ({ x, y }) => {
-          logger.info(`Player ${socket.id} shot event triggered`);
+        socket.on('shoot', ({ x, y, id }) => {
           const p = this.players.get(socket.id);
           if (!p) return;
           
-          const projectile = new Projectile(p.x, p.y, x, y, 12, 5000, 0.05, `proj-${Date.now()}-${Math.random()}`, p.id);
-    
+          const projectile = new Projectile(p.x, p.y, x, y, 5, 5000, 0.05, id, p.id);
+          logger.info(`Player ${socket.id} shot event triggered with projectile id: ${id}`);
+
           this.projectiles.push(projectile);
         });
     
@@ -80,42 +88,80 @@ export class Match {
     }
   }
 
-  // Called every frame
   private update() {
-    // Move projectiles
-    // update all projectiles
+    const now = Date.now();
+  
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
-        const projectile = this.projectiles[i];
-        projectile.update();
-        if (projectile.shouldBeDestroyed) {
-          this.projectiles.splice(i, 1);
-          continue;
-        } 
-        this.projectileStates.push({ 
-            ownerId: projectile.getOwnerId(),
-            id: projectile.getId(),
-            x: projectile.getX(),
-            y: projectile.getY(),
-            vx: projectile.getVX(),
-            vy: projectile.getVY()
+      const projectile = this.projectiles[i];
+      projectile.update();
+  
+      // Check for off-screen or expired
+      if (projectile.shouldBeDestroyed) {
+        console.log(`Projectile ${projectile.getId()} destroyed due to flag`);
+        this.projectiles.splice(i, 1);
+        continue;
+      }
+  
+      // Check for collisions
+      for (const player of this.players.values()) {
+        if (projectile.getOwnerId() === player.id) continue;
+  
+        const projectileRect = {
+          x: projectile.getX() - PROJECTILE_WIDTH / 2,
+          y: projectile.getY() - PROJECTILE_HEIGHT / 2,
+          width: PROJECTILE_WIDTH,
+          height: PROJECTILE_HEIGHT,
+        };
+  
+        const playerRect = {
+          x: player.x - PLAYER_WIDTH / 2,
+          y: player.y - PLAYER_HEIGHT,
+          width: PLAYER_WIDTH,
+          height: PLAYER_HEIGHT,
+        };
+  
+        if (testForAABB(projectileRect, playerRect)) {
+          logger.info(`Collision: ${projectile.getId()} hit ${player.id}`);
+          player.hp -= 10;
+          projectile.shouldBeDestroyed = true;
+  
+          if (player.hp <= 0) {
+            this.players.delete(player.id);
+            this.sockets = this.sockets.filter(s => s.id !== player.id);
+            if (this.sockets.length === 0) this.cleanup();
+          }
+  
+          break; // One hit for projectile, no need to check other players after first hit.
+        }
+      }
+  
+      // Collect projectile state for broadcast
+      if (!projectile.shouldBeDestroyed) {
+        this.projectileStates.push({
+          ownerId: projectile.getOwnerId(),
+          id: projectile.getId(),
+          x: projectile.getX(),
+          y: projectile.getY(),
+          vx: projectile.getVX(),
+          vy: projectile.getVY(),
         });
+      } else {
+        this.projectiles.splice(i, 1); // remove after state capture
+      }
     }
-
-    // TODO: Optional - remove off-screen projectiles, handle collisions
-
-    // Broadcast full game state
+  
     const gameState = {
       players: Array.from(this.players.values()),
       projectiles: this.projectileStates,
     };
-
-
+  
     for (const socket of this.sockets) {
       socket.emit('stateUpdate', gameState);
     }
-
+  
     this.projectileStates = [];
   }
+  
 
   private cleanup() {
     clearInterval(this.interval);
