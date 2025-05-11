@@ -78,9 +78,8 @@ class Matchmaker {
     for (const player of players) {
       logger.info(`Informing player ${player.socket.id} of the game start`);
       player.socket.join(matchId);
-      player.socket.emit('matchStart', { matchId, region });
-    }
-    match.initialize();
+      player.socket.emit('matchFound', { matchId, region });
+    };
     this.matches.push(match);
 
 
