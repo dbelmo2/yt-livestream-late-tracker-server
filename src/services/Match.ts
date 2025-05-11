@@ -28,12 +28,26 @@ export type ProjectileState = {
   ownerId: string;
 };
 
+export type PlayerScore = {
+  kills: number;
+  deaths: number;
+};
+
+const MAX_KILL_AMOUNT = 2; // Adjust this value as needed
+
+
 export class Match {
   private id: string;
   private players: Map<string, PlayerState> = new Map();
   private projectiles: Projectile[] = [];
   private interval: NodeJS.Timeout;
   private projectileStates: ProjectileState[] = [];
+  private timeoutIds: Set<NodeJS.Timeout> = new Set();
+  private startingX = 100;
+  private startingY = 100;
+  private totalCollisions = 0;
+  private playerScores: Map<string, PlayerScore> = new Map();
+
 
   constructor(
     public sockets: Socket[],
@@ -50,15 +64,19 @@ export class Match {
   // Add a player to this match
   initialize() {
     for (const socket of this.sockets) {
-        const startingX = 100 + Math.random() * 400;
-        const startingY = 100;
-    
         this.players.set(socket.id, {
           id: socket.id,
-          x: startingX,
-          y: startingY,
+          x: this.startingX,
+          y: this.startingY,
           hp: 100,
         });
+
+        // Initialize player score
+        this.playerScores.set(socket.id, {
+          kills: 0,
+          deaths: 0,
+        });
+
     
         // Listen for player input
         socket.on('playerInput', ({ x, y }) => {
@@ -74,23 +92,43 @@ export class Match {
           const p = this.players.get(socket.id);
           if (!p) return;
           
-          const projectile = new Projectile(p.x, p.y, x, y, 5, 5000, 0.05, id, p.id);
+          const projectile = new Projectile(p.x, p.y, x, y, 30, 5000, 0.05, id, p.id);
           logger.info(`Player ${socket.id} shot event triggered with projectile id: ${id}`);
 
           this.projectiles.push(projectile);
         });
     
         socket.on('disconnect', () => {
-          this.players.delete(socket.id);
+         this.players.delete(socket.id);
+          this.playerScores.delete(socket.id); // Remove scores when player disconnects
           this.sockets = this.sockets.filter(s => s.id !== socket.id);
           if (this.sockets.length === 0) this.cleanup();
         });
     }
   }
 
+  private checkWinCondition() {
+    const sortedScores = Array.from(this.playerScores.entries())
+      .map(([playerId, score]) => ({
+        playerId,
+        ...score
+      }))
+      .sort((a, b) => b.kills - a.kills);
+
+    const winner = sortedScores[0];
+    
+    if (winner && winner.kills >= MAX_KILL_AMOUNT) {
+      // Emit game over event with sorted scores
+      for (const socket of this.sockets) {
+        socket.emit('gameOver', sortedScores);
+      }
+      
+      // Clean up the match
+      this.cleanup();
+    }
+  }
+
   private update() {
-    const now = Date.now();
-  
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const projectile = this.projectiles[i];
       projectile.update();
@@ -103,6 +141,7 @@ export class Match {
       }
   
       // Check for collisions
+      
       for (const player of this.players.values()) {
         if (projectile.getOwnerId() === player.id) continue;
   
@@ -120,21 +159,42 @@ export class Match {
           height: PLAYER_HEIGHT,
         };
   
+        
         if (testForAABB(projectileRect, playerRect)) {
+          this.totalCollisions++;
           logger.info(`Collision: ${projectile.getId()} hit ${player.id}`);
           player.hp -= 10;
           projectile.shouldBeDestroyed = true;
-  
+
           if (player.hp <= 0) {
             this.players.delete(player.id);
-            this.sockets = this.sockets.filter(s => s.id !== player.id);
-            if (this.sockets.length === 0) this.cleanup();
+            // Update death count for killed player
+            const killedPlayerScore = this.playerScores.get(player.id);
+            if (killedPlayerScore) {
+              killedPlayerScore.deaths++;
+            }
+            // Update kill count for shooter
+            const shooterScore = this.playerScores.get(projectile.getOwnerId());
+            if (shooterScore) {
+              shooterScore.kills++;
+              this.checkWinCondition();
+            }
+
+            const id = setTimeout(() => {
+              this.players.set(player.id, {
+                id: player.id,
+                x: this.startingX,
+                y: this.startingY,
+                hp: 100,
+              });
+              this.timeoutIds.delete(id);
+            }, 3000);
+            this.timeoutIds.add(id);
           }
-  
-          break; // One hit for projectile, no need to check other players after first hit.
+          break;
         }
       }
-  
+      
       // Collect projectile state for broadcast
       if (!projectile.shouldBeDestroyed) {
         this.projectileStates.push({
@@ -153,18 +213,30 @@ export class Match {
     const gameState = {
       players: Array.from(this.players.values()),
       projectiles: this.projectileStates,
+      scores: Array.from(this.playerScores.entries()).map(([playerId, score]) => ({
+        playerId,
+        ...score
+      }))
     };
   
     for (const socket of this.sockets) {
       socket.emit('stateUpdate', gameState);
     }
-  
+    //logger.info(`Total collisions: ${this.totalCollisions}`);
     this.projectileStates = [];
   }
+  
   
 
   private cleanup() {
     clearInterval(this.interval);
-    console.log(`Match ${this.id} ended and cleaned up`);
+    for (const id of this.timeoutIds) {
+      clearTimeout(id);
+    }
+    for (const socket of this.sockets) {
+      socket.removeAllListeners('playerInput');
+      socket.removeAllListeners('shoot');
+    }
+    logger.info(`Match ${this.id} ended and cleaned up`);
   }
 }
