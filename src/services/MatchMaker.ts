@@ -9,6 +9,7 @@ type QueuedPlayer = {
   socket: any; // or socket.io Socket type
   region: Region;
   enqueuedAt: number;
+  name: string;
 };
 
 class Matchmaker {
@@ -20,7 +21,7 @@ class Matchmaker {
 
     if (match) {
       logger.info(`Adding player ${player.id} to existing match ${match.getId()} in region ${player.region}`);
-      match.addPlayer(player.socket);
+      match.addPlayer(player.socket, player.name);
       player.socket.join(match.getId());
       player.socket.emit('matchFound', { 
         matchId: match.getId(), 
@@ -30,7 +31,7 @@ class Matchmaker {
       // Create a new match if none exists in the region
       logger.info(`Creating new match for player ${player.id} in region ${player.region}`);
       const matchId = this.generateMatchId();
-      const newMatch = new Match([player.socket], player.region, matchId, this.matches)
+      const newMatch = new Match(player.socket, player.region, matchId, this.matches, player.name);
       this.matches.set(matchId, newMatch);
       player.socket.join(matchId);
       player.socket.emit('matchFound', { 

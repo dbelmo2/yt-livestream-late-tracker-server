@@ -45,13 +45,13 @@ app.use('/api', routes);
 io.on('connection', (socket) => {
   logger.info(`Socket connected: ${socket.id}`);
 
-  socket.on('joinQueue', (region: string) => {
+  socket.on('joinQueue', ({ region, name }: { region: string, name: string}) => {
     logger.info(`Socket ${socket.id} emitted joinQueue`);
-    logger.info('')
     if (['NA', 'EU', 'ASIA'].includes(region)) {
       logger.info(`Valid region: ${region}, queuing player`);
       MatchMaker.enqueuePlayer({
         id: socket.id,
+        name,
         socket,
         region: region as Region,
         enqueuedAt: Date.now()
