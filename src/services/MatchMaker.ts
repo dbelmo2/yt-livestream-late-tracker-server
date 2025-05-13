@@ -11,85 +11,61 @@ type QueuedPlayer = {
   enqueuedAt: number;
 };
 
-
 class Matchmaker {
-
-  private matches: Match[] = [];
-  
-  private queues: Record<Region, QueuedPlayer[]> = {
-    NA: [],
-    EU: [],
-    ASIA: [],
-    GLOBAL: [],
-  };
-
-  private matchIdCounter = 0;
-
-  constructor() {
-    setInterval(() => this.tick(), 1000); // run every second
-  }
+  private matches: Map<string, Match> = new Map();
 
   enqueuePlayer(player: QueuedPlayer) {
-    const now = Date.now();
+    // First try to find an existing match in the player's region
+    const match = this.findMatchInRegion(player.region);
 
-    // If the player waited too long in a region queue, move them to global
-    if (player.region !== 'GLOBAL' && now - player.enqueuedAt >= config.regionalQueueTimeout) {
-      this.removeFromRegion(player.id, player.region);
-      player.region = 'GLOBAL';
-      player.enqueuedAt = now;
-      this.queues.GLOBAL.push(player);
-      player.socket.emit('movedToGlobalQueue');
+    if (match) {
+      logger.info(`Adding player ${player.id} to existing match ${match.getId()} in region ${player.region}`);
+      match.addPlayer(player.socket);
+      player.socket.join(match.getId());
+      player.socket.emit('matchFound', { 
+        matchId: match.getId(), 
+        region: player.region 
+      });
     } else {
-      logger.info(`Adding player ${player.socket.id} to ${player.region} queue...`);
-      this.queues[player.region].push(player);
-      logger.info(`Player successfully added.. queue size is now ${this.queues[player.region].length}`);
+      // Create a new match if none exists in the region
+      logger.info(`Creating new match for player ${player.id} in region ${player.region}`);
+      const matchId = this.generateMatchId();
+      const newMatch = new Match([player.socket], player.region, matchId, this.matches)
+      this.matches.set(matchId, newMatch);
+      player.socket.join(matchId);
+      player.socket.emit('matchFound', { 
+        matchId, 
+        region: player.region 
+      });
     }
   }
 
-  private removeFromRegion(playerId: string, region: Region) {
-    this.queues[region] = this.queues[region].filter(p => p.id !== playerId);
-  }
-
-  private tick() {
-    for (const region of Object.keys(this.queues) as Region[]) {
-      const queue = this.queues[region];
-      if (queue.length >= config.earlyStartMinPlayers) {
-        // Start match early with 4+ players
-        logger.info('early start, creating match...');
-        this.createMatch(queue.splice(0, Math.min(config.maxPlayers, queue.length)), region);
-      } else if (queue.length >= config.fallbackMinPlayers) {
-        const oldest = queue[0];
-        const now = Date.now();
-        if (now - oldest.enqueuedAt >= config.fallbackStartTimeout) {
-          // Final timeout reached, start with 2+ players
-          logger.info('Fallback... creating match');
-          this.createMatch(queue.splice(0, queue.length), region);
-        }
+  private findMatchInRegion(region: Region): Match | null {
+    for (const match of this.matches.values()) {
+      if (match.getRegion() === region) {
+        return match;
       }
     }
+    return null;
   }
 
-  private createMatch(players: QueuedPlayer[], region: Region) {
-    const playerSockets = players.map((player) => player.socket);
-    const matchId = `match-${++this.matchIdCounter}`; // TODO: Replace with better system if appropriate 
-    const match = new Match(playerSockets, region, matchId);
-    
-    // Notify players
-    for (const player of players) {
-      logger.info(`Informing player ${player.socket.id} of the game start`);
-      player.socket.join(matchId);
-      player.socket.emit('matchFound', { matchId, region });
-    };
-    this.matches.push(match);
+  private generateMatchId(): string {
+    return `match-${Math.random().toString(36).substring(2, 8)}`;
+  }
 
+  removeMatch(matchId: string) {
+    this.matches.delete(matchId);
+    logger.info(`Match ${matchId} removed from matchmaker`);
+  }
 
-    console.log(`Match created: ${matchId} [${region}] with ${players.length} players`);
-    // Store or manage match in a separate MatchManager if needed
+  getMatch(matchId: string): Match | undefined {
+    return this.matches.get(matchId);
+  }
+
+  getActiveMatches(): Match[] {
+    return Array.from(this.matches.values());
   }
 }
 
 const matchMaker = new Matchmaker();
 export default matchMaker;
-
-
-

@@ -8,13 +8,11 @@ import {
   PLAYER_WIDTH,
   PLAYER_HEIGHT
 } from '../game-logic/collision';
-import { set } from 'mongoose';
-import test from 'node:test';
-import { kill } from 'process';
+import { match } from 'assert';
+
 
 
 type Region = 'NA' | 'EU' | 'ASIA' | 'GLOBAL';
-type GamePhase = 'initializing' | 'ready' | 'active' | 'ended';
 
 
 export type PlayerState = {
@@ -22,6 +20,7 @@ export type PlayerState = {
   x: number;
   y: number;
   hp: number;
+  isBystander: boolean;
 };
 
 export type ProjectileState = {
@@ -41,9 +40,7 @@ export type PlayerScore = {
 const MAX_KILL_AMOUNT = 2; // Adjust this value as needed
 
 
-// TODO: 
-//  1. Address Y coordinate mismatch between client and server
-//  2. Address height mismatch between client and server (probably due to health bar)
+
 
 export class Match {
   private id: string;
@@ -56,14 +53,17 @@ export class Match {
   private startingY = 100;
   private totalCollisions = 0;
   private playerScores: Map<string, PlayerScore> = new Map();
-  private gamePhase: GamePhase = 'initializing';
-  private readyPlayers: Set<string> = new Set();
   private sockets: Socket[] = [];
   private region: Region;
+  private respawnQueue: Set<string> = new Set();
+  private matchIsActive = true;
+  
+
   constructor(
     sockets: Socket[],
     region: Region,
-    id = `match-${Math.random().toString(36).substring(2, 8)}`
+    id = `match-${Math.random().toString(36).substring(2, 8)}`,
+    public matches: Map<string, Match> = new Map(),
   ) {
     this.id = id;
     this.sockets = sockets;
@@ -73,12 +73,54 @@ export class Match {
     this.setUpPlayerSocketHandlers(sockets);
     // Start game loop loop (this will broadcast the game state to all players)
     this.interval = setInterval(() => this.update(), 1000 / 60); 
-    this.gamePhase = 'ready';
-
-    // Once setup is complete, inform players
-    this.informPlayersMatchSetupComplete();
   }
 
+  public addPlayer(socket: Socket): void {
+    this.sockets.push(socket);
+    
+    // Initialize new player as bystander
+    this.players.set(socket.id, {
+      id: socket.id,
+      x: this.startingX,
+      y: this.startingY,
+      hp: 100,
+      isBystander: true
+    });
+
+    this.playerScores.set(socket.id, {
+      kills: 0,
+      deaths: 0
+    });
+
+    this.setUpPlayerSocketHandlers([socket]);
+    
+    // Inform new player of current game state
+    socket.emit('stateUpdate', {
+      players: Array.from(this.players.values()),
+      projectiles: this.projectileStates,
+      scores: Array.from(this.playerScores.entries())
+        .map(([playerId, score]) => ({
+          playerId,
+          ...score
+        }))
+    });
+  }
+
+  public getId(): string {
+    return this.id;
+  } 
+
+  public getRegion(): Region {
+    return this.region;
+  }
+
+  private handleToggleBystander(playerId: string): void {
+    const player = this.players.get(playerId);
+    if (!player) return;
+
+    player.isBystander = false;
+    logger.info(`Player ${playerId} is no longer a bystander`);
+  }
 
   private initalizePlayerData(sockets: Socket[]) {
     for (const socket of sockets) {
@@ -88,6 +130,7 @@ export class Match {
         x: this.startingX,
         y: this.startingY,
         hp: 100,
+        isBystander: true
       });
 
       // Initialize player scores
@@ -100,46 +143,10 @@ export class Match {
 
   private setUpPlayerSocketHandlers(sockets: Socket[]) {
     for (const socket of sockets) {
-      socket.on('playerReady', () => this.handlePlayerReady(socket.id));
       socket.on('playerInput', ({ x, y }) => this.handlePlayerInput(socket.id, x, y));
       socket.on('shoot', ({ x, y, id }) => this.handlePlayerShooting(socket.id, id, x, y));
+      socket.on('toggleBystander', () => this.handleToggleBystander(socket.id));
       socket.on('disconnect', () => this.handlePlayerDisconnect(socket.id));
-    }
-  }
-
-  private handlePlayerReady(playerId: string) {
-    this.readyPlayers.add(playerId);
-    if (this.readyPlayers.size === this.sockets.length) {
-      logger.info(`All players are ready, starting match...`);
-      this.startMatch();
-    } else {
-      // Notify all players of ready status
-      const readyCount = this.readyPlayers.size;
-      const totalPlayers = this.sockets.length;
-      for (const socket of this.sockets) {
-        socket.emit('readyUpdate', { ready: readyCount, total: totalPlayers });
-      }
-    }
-  }
-
-  private informPlayersMatchSetupComplete() {
-    for (const socket of this.sockets) {
-      socket.emit('setupComplete');
-    }
-  }
-
-  private startMatch() {
-    this.gamePhase = 'active';
-    this.readyPlayers.clear();
-    for (const socket of this.sockets) {
-      socket.emit('matchStart', {
-          players: Array.from(this.players.values()),
-          scores: Array.from(this.playerScores.entries())
-            .map(([playerId, score]) => ({
-              playerId,
-              ...score
-            }))
-      });
     }
   }
 
@@ -156,20 +163,49 @@ export class Match {
     
     if (winner && winner.kills >= MAX_KILL_AMOUNT) {
       // Emit game over event with sorted scores
-      this.gamePhase = 'ended';
+
+      this.matchIsActive = false;
+      
+      // Clear any pending respawn timeouts
+      for (const id of this.timeoutIds) {
+        clearTimeout(id);
+      }
+
+      // Respawn any players in the respawn queue
+
+      console.log(`Number of dead players: ${this.respawnQueue.size}`);
+      console.log(`numbner of players alive: ${this.players.size}`);
+
+      for (const playerId of this.respawnQueue) {
+          this.players.set(playerId, {
+            id: playerId,
+            x: this.startingX,
+            y: this.startingY,
+            hp: 100,
+            isBystander: false
+          });
+      }
+      console.log(`after respoawn, Number of dead players: ${this.respawnQueue.size}`);
+      console.log(`after respawn, number of players alive: ${this.players.size}`);
+    
+
       for (const socket of this.sockets) {
         socket.emit('gameOver', sortedScores);
       }
-      
-      // Clean up the match
-      this.cleanup();
+
+
+
+      this.respawnQueue.clear();
+      this.timeoutIds.clear();
+
+      // Reset match.
+      setTimeout(() => this.resetMatch(), 5000); // Wait 5 seconds before resetting
+
     }
   }
 
   private update() {
-    if (this.gamePhase === 'ended') return;
     const projectilesToRemove: number[] = [];
-
     for (let i = 0; i < this.projectiles.length; i++) {
       const projectile = this.projectiles[i];
       projectile.update();
@@ -182,31 +218,34 @@ export class Match {
   
       // Check for collisions
       let collided = false;
-      for (const player of this.players.values()) {
-        if (projectile.getOwnerId() === player.id) continue;
-        // TODO: Print victim location here for first projectile to compare with client data.
-        const projectileRect = {
-          x: projectile.getX() - PROJECTILE_WIDTH / 2,
-          y: projectile.getY() - PROJECTILE_HEIGHT / 2,
-          width: PROJECTILE_WIDTH,
-          height: PROJECTILE_HEIGHT,
-        };
-  
-        const playerRect = {
-          x: player.x - PLAYER_WIDTH / 2,
-          y: player.y - PLAYER_HEIGHT,
-          width: PLAYER_WIDTH,
-          height: PLAYER_HEIGHT,
-        };
-  
-        collided = testForAABB(projectileRect, playerRect);
-        if (collided) {
-          projectilesToRemove.push(i);
-          this.handleCollision(projectile, player);
-          break;
+      if (this.matchIsActive === true) {
+        for (const player of this.players.values()) {
+          if (projectile.getOwnerId() === player.id || player.isBystander) continue;
+          // TODO: Print victim location here for first projectile to compare with client data.
+          const projectileRect = {
+            x: projectile.getX() - PROJECTILE_WIDTH / 2,
+            y: projectile.getY() - PROJECTILE_HEIGHT / 2,
+            width: PROJECTILE_WIDTH,
+            height: PROJECTILE_HEIGHT,
+          };
+    
+          const playerRect = {
+            x: player.x - PLAYER_WIDTH / 2,
+            y: player.y - PLAYER_HEIGHT,
+            width: PLAYER_WIDTH,
+            height: PLAYER_HEIGHT,
+          };
+    
+          collided = testForAABB(projectileRect, playerRect);
+          if (collided) {
+            logger.info(`Collision detected between projectile ${projectile.getId()} and player ${player.id}`);
+            projectilesToRemove.push(i);
+            this.handleCollision(projectile, player);
+            break;
+          }
         }
       }
-      
+
       // Collect projectile state for broadcast
       if (!collided) {
         this.projectileStates.push({
@@ -229,12 +268,12 @@ export class Match {
 
     // Broadcast the game state to all players
     const gameState = {
-      players: Array.from(this.players.values()),
-      projectiles: this.projectileStates,
-      scores: Array.from(this.playerScores.entries()).map(([playerId, score]) => ({
-        playerId,
-        ...score
-      }))
+        players: Array.from(this.players.values()),
+        projectiles: this.projectileStates,
+        scores: Array.from(this.playerScores.entries()).map(([playerId, score]) => ({
+          playerId,
+          ...score
+        }))
     };
   
     for (const socket of this.sockets) {
@@ -247,7 +286,7 @@ export class Match {
     this.players.delete(playerId);
     this.playerScores.delete(playerId);
     this.sockets = this.sockets.filter(s => s.id !== playerId);
-    if (this.sockets.length === 0) this.cleanup();
+    if (this.sockets.length === 0) this.cleanUpSession();
   }
 
   private handlePlayerShooting(
@@ -256,22 +295,14 @@ export class Match {
     x: number,
     y: number,
   ): void {
-      if (this.gamePhase !== 'active') return;
       const p = this.players.get(playerId);
-      if (!p) return;
+      if (!p || p.isBystander) return;
       
       const projectile = new Projectile(p.x, p.y, x, y, 30, 5000, 0.05, projectileId, p.id);
-      logger.info(`Player ${playerId} shot event triggered with projectile id: ${projectileId}`);
-      const otherPlayer = Array.from(this.players.values()).filter(player => player.id !== playerId);
-      logger.info(`Projectile spawn location: ${projectile.getX()}, ${projectile.getY()}`);
-      logger.info(`Projectile target location: ${x}, ${y}`);
-      logger.info(`Location of shooter when shot was triggered: ${p.x}, ${p.y}`);
-      logger.info(`Location of other player when shot was triggered: ${otherPlayer[0].x}, ${otherPlayer[0].y}`);
       this.projectiles.push(projectile);
   }
 
   private handlePlayerInput(playerId: string, x: number, y: number): void {
-    if (this.gamePhase !== 'active') return;
     const p = this.players.get(playerId);
     if (p) {
       p.x = x;
@@ -280,6 +311,7 @@ export class Match {
   }
 
   private handleCollision(projectile: Projectile, player: PlayerState) {
+      if (player.isBystander) return; // Prevent damage to bystanders
       this.totalCollisions++;
       logger.info(`Collision: ${projectile.getId()} hit ${player.id}`);
       player.hp -= 10;
@@ -292,6 +324,8 @@ export class Match {
 
   private handlePlayerDeath(victimId: string, killerId: string) {
       this.players.delete(victimId);
+      this.scheulePlayerRespawn(victimId);
+
       // Update death count for killed player
       const killedPlayerScore = this.playerScores.get(victimId);
       if (killedPlayerScore) {
@@ -304,21 +338,66 @@ export class Match {
         this.checkWinCondition();
       }
 
-      this.scheulePlayerRespawn(victimId);
   }
 
+
+
   private scheulePlayerRespawn(playerId: string) {
+      this.respawnQueue.add(playerId);
+      console.log(`Player ${playerId} is scheduled for respawn`);
       const id = setTimeout(() => {
-        if (this.gamePhase !== 'active') return;
+        console.log(`Inside schedulePlayerRespawn timeout for player ${playerId}`);
+        const needsRespawn = this.respawnQueue.has(playerId);
+        console.log(`Player ${playerId} needs respawn: ${needsRespawn}`);
+        if (needsRespawn === false) return; // Player is not in respawn queue
+        this.respawnQueue.delete(playerId);
         this.players.set(playerId, {
           id: playerId,
           x: this.startingX,
           y: this.startingY,
           hp: 100,
+          isBystander: false
         });
         this.timeoutIds.delete(id);
       }, 3000);
+
       this.timeoutIds.add(id);
+  }
+
+  private resetMatch(): void {
+
+    // Clear all active projectiles
+    this.projectiles = [];
+    this.projectileStates = [];
+    
+    // Reset round-specific state
+    this.totalCollisions = 0;
+
+    // Reset player health and scores but maintain positions and bystander status
+    for (const [playerId, player] of this.players.entries()) {
+      player.hp = 100;
+      // Keep x, y positions and isBystander state
+      
+      // Reset scores for new round
+      this.playerScores.set(playerId, {
+        kills: 0,
+        deaths: 0
+      });
+    }
+    // Inform players of match reset
+    for (const socket of this.sockets) {
+      socket.emit('matchReset', {
+        players: Array.from(this.players.values()),
+        scores: Array.from(this.playerScores.entries())
+          .map(([playerId, score]) => ({
+            playerId,
+            ...score
+          }))
+      });
+    }
+
+    this.matchIsActive = true;
+
   }
 
   private handleError(error: Error, context: string): void {
@@ -326,9 +405,11 @@ export class Match {
     // Could add additional error handling logic here
   }
 
+
+
   
-  private cleanup() {
-    this.gamePhase = 'ended';
+  private cleanUpSession() {
+    this.matches.delete(this.id);
     if (this.interval) clearInterval(this.interval);
     for (const id of this.timeoutIds) {
       clearTimeout(id);
@@ -348,7 +429,6 @@ export class Match {
     // Ensure game loop variables are reset
     this.interval = null;
     this.totalCollisions = 0;
-    this.readyPlayers.clear();
 
 
     logger.info(`Match ${this.id} ended and cleaned up \n\n`);
