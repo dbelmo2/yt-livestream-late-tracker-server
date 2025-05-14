@@ -40,6 +40,7 @@ export type ProjectileState = {
 export type PlayerScore = {
   kills: number;
   deaths: number;
+  name: string;
 };
 
 const MAX_KILL_AMOUNT = 2; // Adjust this value as needed
@@ -99,7 +100,8 @@ export class Match {
 
     this.playerScores.set(socket.id, {
       kills: 0,
-      deaths: 0
+      deaths: 0,
+      name
     });
 
     this.setUpPlayerSocketHandlers([socket]);
@@ -147,6 +149,7 @@ export class Match {
     this.playerScores.set(socket.id, {
       kills: 0,
       deaths: 0,
+      name
     });
   }
 
@@ -209,7 +212,7 @@ export class Match {
       this.timeoutIds.clear();
 
       // Reset match.
-      setTimeout(() => this.resetMatch(), 5000); // Wait 5 seconds before resetting
+      setTimeout(() => this.resetMatch(), 10000); // Wait 5 seconds before resetting
 
     }
   }
@@ -393,7 +396,8 @@ export class Match {
       // Reset scores for new round
       this.playerScores.set(playerId, {
         kills: 0,
-        deaths: 0
+        deaths: 0,
+        name: player.name
       });
     }
     // Inform players of match reset

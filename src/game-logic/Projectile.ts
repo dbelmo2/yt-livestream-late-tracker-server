@@ -35,8 +35,8 @@ export class Projectile  {
     ownerId: string
   ) {
     // initialize 
-    this.x = spawnX + 50;
-    this.y = spawnY + -50;
+    this.x = spawnX;
+    this.y = spawnY - 25;
     this.speed = speed;
     this.lifespan = lifespan;
     this.gravityEffect = gravityEffect;
