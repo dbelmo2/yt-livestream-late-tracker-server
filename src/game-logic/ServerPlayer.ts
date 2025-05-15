@@ -23,45 +23,75 @@ export class ServerPlayer {
   private isOnGround: boolean = false;
   private lastUpdated: number;
   private platforms: Platform[] = [];
-  
+  private gameHeight: number;
   // Physics constants
   private readonly gravity: number = 0.6;
   private readonly maxFallSpeed: number = 9.8;
   private readonly updateThreshold: number = 100; // ms before server takes over
   
-  constructor(id: string, x: number, y: number, name: string) {
+  constructor(id: string, x: number, y: number, name: string, gameHeight: number) {
     this.id = id;
     this.x = x;
     this.y = y;
     this.name = name;
     this.lastUpdated = Date.now();
+    this.gameHeight = gameHeight;
     
   }
+
 
   public setPlatforms(platforms: Platform[]): void {
     this.platforms = platforms;
   }
   
-  public updateFromClient(x: number, y: number, velocityY?: number): void {
-    this.x = x;
+public updateFromClient(x: number, y: number, velocityY: number): void {
+  const wasOnGround = this.isOnGround;
+  
+  // Check if player has moved up from ground position
+  if (wasOnGround && y < this.gameHeight && y < this.y) {
+    this.isOnGround = false;
+  }
+
+  this.x = x;
+  
+  // Ensure player doesn't go below the game floor
+  if (y >= this.gameHeight) {
+    this.y = this.gameHeight;
+    this.velocityY = 0;
+    this.isOnGround = true;
+  } else {
     this.y = y;
-    
-    // Only update velocityY if provided by client
-    if (velocityY !== undefined) {
-      this.velocityY = velocityY;
-    }
-    
-    this.lastUpdated = Date.now();
   }
   
-  public update(gameHeight: number): void {
+  // Only update velocityY if provided by client
+  if (velocityY !== undefined) {
+    this.velocityY = velocityY;
+  }
+  
+  // If player has upward velocity, they're not on the ground
+  if (velocityY < 0) {
+    this.isOnGround = false;
+  }
+  
+  this.lastUpdated = Date.now();
+}
+  
+  public update(): void {
     const now = Date.now();
     const timeSinceUpdate = now - this.lastUpdated;
     
+
+    // Reset isOnGround if player is above the floor
+    if (this.y < this.gameHeight && this.isOnGround) {
+      this.isOnGround = false;
+    }
+
     // Only apply physics if client hasn't updated recently
     // and player is not on ground
     if (timeSinceUpdate > this.updateThreshold && !this.isOnGround) {
       // Apply gravity
+
+      console.log('Applying server gravity');
       this.velocityY += this.gravity;
       
       // Cap fall speed
@@ -73,8 +103,8 @@ export class ServerPlayer {
       this.y += this.velocityY;
       
       // Check for floor collision
-      if (this.y >= gameHeight) {
-        this.y = gameHeight;
+      if (this.y >= this.gameHeight) {
+        this.y = this.gameHeight;
         this.velocityY = 0;
         this.isOnGround = true;
       } else {
@@ -119,6 +149,10 @@ export class ServerPlayer {
     this.isBystander = value;
   }
   
+  public getIsBystander(): boolean {
+    return this.isBystander;
+  }
+    
   public damage(amount: number = 10): void {
     this.hp = Math.max(0, this.hp - amount);
   }
@@ -131,6 +165,24 @@ export class ServerPlayer {
     this.hp = 100;
   }
   
+
+  public getId(): string {
+    return this.id;
+  }
+  public getX(): number {
+    return this.x;
+  }
+  public getY(): number {
+    return this.y;
+  }
+  public getHp(): number {
+    return this.hp;
+  }
+
+  public getName(): string {
+    return this.name;
+  }
+
   public getState(): PlayerState {
     return {
       id: this.id,
