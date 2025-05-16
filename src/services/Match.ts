@@ -40,7 +40,7 @@ export type PlayerScore = {
 };
 
 
-const MAX_KILL_AMOUNT = 2; // Adjust this value as needed
+const MAX_KILL_AMOUNT = 5; // Adjust this value as needed
 
 export class Match {
   private readonly GAME_WIDTH = 1920;  // Fixed game width
