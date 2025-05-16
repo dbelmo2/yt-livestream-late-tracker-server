@@ -11,4 +11,6 @@ export const config = {
     earlyStartMinPlayers: parseInt(process.env.EARLY_START_MIN_PLAYERS || '3'),
     fallbackMinPlayers: parseInt(process.env.FALLBACK_MIN_PLAYERS || '2'),
     fallbackStartTimeout: parseInt(process.env.FALLBACK_START_TIMEOUT || '30'),
+    frontEndUrl: process.env.FRONT_END_URL || 'http://localhost:3000',
+    nodeEnv: process.env.NODE_ENV || 'development',
 };

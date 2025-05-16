@@ -17,13 +17,15 @@ import MatchMaker, { Region } from './services/MatchMaker';
 connectDB();
 
 const app = express();
-const server = http.createServer(app); // 🔄 create HTTP server for Socket.IO to attach to
+const server = http.createServer(app);
 
 const io = new SocketIOServer(server, {
   cors: {
-    origin: '*', // adjust for production
+    origin: config.frontEndUrl || '*',
     methods: ['GET', 'POST']
-  }
+  },
+  transports: ['websocket', 'polling'],
+  pingTimeout: 30000
 });
 
 app.set('trust proxy', 1);
@@ -33,7 +35,6 @@ app.use(express.json());
 app.use(express.text({ type: 'application/atom+xml' }));
 app.use(errorMiddleware);
 
-// ✅ Rate limiting (except /webhooks)
 app.use('/api', (req, res, next) => {
   if (req.path.startsWith('/webhooks')) return next();
   return rateLimiter(req, res, next);
@@ -41,7 +42,6 @@ app.use('/api', (req, res, next) => {
 
 app.use('/api', routes);
 
-// ✅ Socket.IO Matchmaking
 io.on('connection', (socket) => {
   logger.info(`Socket connected: ${socket.id}`);
 
