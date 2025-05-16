@@ -10,7 +10,7 @@
     "test": "jest --config jest.config.ts",
     "coverage": "jest --config jest.config.ts --coverage",
     "start": "node dist/index.js",
-    "dev": "dotenv -e .env -- nodemon --watch \"src/**/*.ts\" --exec ts-node src/index.ts",
+    "dev": "nodemon --watch \"src/**/*.ts\" --exec ts-node src/index.ts",
     "build": "tsc --project tsconfig.json",
     "prebuild": "rm -rf dist || true",
     "lint": "eslint . --ext \"src/**/*.ts\"",

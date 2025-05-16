@@ -1,4 +1,3 @@
-// src/index.ts - MUST be the first import
 import * as dotenv from 'dotenv';
 dotenv.config();
 
