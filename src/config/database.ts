@@ -6,6 +6,8 @@ export default async () => {
     try {
         logger.info(`Connecting to MongoDB using URI "${config.mongoUri}"`);
         logger.info(`process.env.MONGO_URI ${process.env.MONGO_URI}`);
+        console.log(`process.env.NODE_ENV ${process.env.NODE_ENV}`);
+
         await mongoose.connect(config.mongoUri as string);
         logger.info("MongoDB connected successfully");
     }   catch (error) {

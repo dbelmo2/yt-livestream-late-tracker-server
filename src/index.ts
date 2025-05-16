@@ -1,3 +1,7 @@
+// src/index.ts - MUST be the first import
+import * as dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
