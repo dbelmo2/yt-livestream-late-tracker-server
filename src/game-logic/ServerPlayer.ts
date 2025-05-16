@@ -91,7 +91,6 @@ public updateFromClient(x: number, y: number, velocityY: number): void {
     if (timeSinceUpdate > this.updateThreshold && !this.isOnGround) {
       // Apply gravity
 
-      console.log('Applying server gravity');
       this.velocityY += this.gravity;
       
       // Cap fall speed

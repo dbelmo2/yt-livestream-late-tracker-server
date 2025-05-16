@@ -77,10 +77,10 @@ export class Match {
 
 
     this.initializePlatforms()
-
-
     this.initalizeFirstPlayer(socket, firstPlayerName);
     this.setUpPlayerSocketHandlers(this.sockets);
+
+    logger.info(`Match ${this.id} created in region ${region} with first player ${firstPlayerName}`);
     // Start game loop loop (this will broadcast the game state to all players)
     this.interval = setInterval(() => this.update(), 1000 / 60); 
   }
@@ -102,7 +102,9 @@ export class Match {
     });
 
     this.setUpPlayerSocketHandlers([socket]);
-    
+    logger.info(`Player ${name} (${socket.id}) joined match ${this.id} in region ${this.region}`);
+    logger.info(`Match ${this.id} now has ${this.players.size} players`);
+
 
 
     // Inform new player of current game state
@@ -127,10 +129,13 @@ export class Match {
 
   private handleToggleBystander(playerId: string): void {
     const player = this.players.get(playerId);
-    if (!player) return;
-
+    if (!player) {
+      logger.error(`Player ${playerId} attempted to toggle bystander mode but was not found in match ${this.id}`);
+      return;
+    }
     player.setIsBystander(false);
-    logger.info(`Player ${playerId} is no longer a bystander`);
+    logger.info(`Player ${player.getName()} (${playerId}) left bystander mode in match ${this.id}`);
+
   }
 
   private initalizeFirstPlayer(socket: Socket, name: string) {
@@ -178,8 +183,19 @@ export class Match {
     const winner = sortedScores[0];
     
     if (winner && winner.kills >= MAX_KILL_AMOUNT) {
-      // Emit game over event with sorted scores
+      // Get winner name
+      const winnerPlayer = this.players.get(winner.playerId);
+      const winnerName = winnerPlayer ? winnerPlayer.getName() : winner.name;
+      
+      logger.info(`Match ${this.id} ended. Winner: ${winnerName} (${winner.playerId}) with ${winner.kills} kills`);
+      logger.info(`Final scores for match ${this.id}:`);
+      
+      // Log all player scores
+      sortedScores.forEach((score, index) => {
+        logger.info(`  ${index + 1}. ${score.name} - Kills: ${score.kills}, Deaths: ${score.deaths}`);
+      });
 
+      // Emit game over event with sorted scores
       this.matchIsActive = false;
       
       // Clear any pending respawn timeouts
@@ -251,7 +267,6 @@ export class Match {
     
           collided = testForAABB(projectileRect, playerRect);
           if (collided) {
-            logger.info(`Collision detected between projectile ${projectile.getId()} and player ${player.getId()}`);
             projectilesToRemove.push(i);
             this.handleCollision(projectile, player);
             break;
@@ -296,11 +311,22 @@ export class Match {
   }
 
   private handlePlayerDisconnect(playerId: string): void {
+    const player = this.players.get(playerId);
+    const playerName = player ? player.getName() : "Unknown Player";
+  
     this.players.delete(playerId);
     this.playerScores.delete(playerId);
     this.sockets = this.sockets.filter(s => s.id !== playerId);
-    if (this.sockets.length === 0) this.cleanUpSession();
-  }
+
+    logger.info(`Player ${playerName} (${playerId}) disconnected from match ${this.id}`);
+    logger.info(`Match ${this.id} now has ${this.players.size} players`);
+  
+
+    if (this.sockets.length === 0) {
+      logger.info(`All players left match ${this.id}. Cleaning up.`);
+      this.cleanUpSession();
+    }  
+}
 
   private handlePlayerShooting(
     playerId: string, 
@@ -309,8 +335,15 @@ export class Match {
     y: number,
   ): void {
       const p = this.players.get(playerId);
-      if (!p || p.getIsBystander()) return;
-      
+      if (!p || p.getIsBystander()) {
+        if (!p) {
+          logger.error(`Player ${playerId} attempted to shoot but was not found in match ${this.id}`);
+        } else if (p.getIsBystander()) {
+          logger.warn(`Bystander ${p.getName()} (${playerId}) attempted to shoot in match ${this.id}`);
+        }
+        return;
+      }      
+      logger.debug(`Player ${p.getName()} (${playerId}) fired projectile ${projectileId} in match ${this.id}`);
       const projectile = new Projectile(p.getX(), p.getY(), x, y, 30, 5000, 0.05, projectileId, p.getId());
       this.projectiles.push(projectile);
   }
@@ -325,7 +358,6 @@ export class Match {
   private handleCollision(projectile: Projectile, player: ServerPlayer): void {
       if (player.getIsBystander()) return; // Prevent damage to bystanders
       this.totalCollisions++;
-      logger.info(`Collision: ${projectile.getId()} hit ${player.getId()}`);
       player.damage(10);
 
       if (player.getHp() <= 0) {
@@ -337,15 +369,26 @@ export class Match {
   private handlePlayerDeath(victimId: string, victimName: string, killerId: string) {
       this.players.delete(victimId);
       // Update death count for killed player
+
+      const killer = this.players.get(killerId);
+      const killerName = killer ? killer.getName() : "Unknown Player";
+  
+
       const killedPlayerScore = this.playerScores.get(victimId);
       if (killedPlayerScore) {
         killedPlayerScore.deaths++;
+        logger.info(`Player ${victimName} (${victimId}) was killed by ${killerName} (${killerId}) in match ${this.id}`);
+      } else {
+        logger.error(`Failed to update deaths for player ${victimName} (${victimId}) - score not found`);
       }
       // Update kill count for shooter
       const shooterScore = this.playerScores.get(killerId);
       if (shooterScore) {
+        logger.info(`Player ${killerName} (${killerId}) now has ${shooterScore.kills} kills in match ${this.id}`);
         shooterScore.kills++;
         this.checkWinCondition();
+      } else {
+          logger.error(`Failed to update kills for player ${killerName} (${killerId}) - score not found`);
       }
 
       this.scheulePlayerRespawn(victimId, victimName);
@@ -356,12 +399,9 @@ export class Match {
   private scheulePlayerRespawn(playerId: string, playerName: string): void {
 
       this.respawnQueue.set(playerId, playerName);
-      console.log(`Player ${playerId} is scheduled for respawn`);
       
       const id = setTimeout(() => {
-        console.log(`Inside schedulePlayerRespawn timeout for player ${playerId}`);
         const needsRespawn = this.respawnQueue.has(playerId);
-        console.log(`Player ${playerId} needs respawn: ${needsRespawn}`);
         if (needsRespawn === false) return; // Player is not in respawn queue
         this.respawnQueue.delete(playerId);
         const player = new ServerPlayer(playerId, this.startingX, this.startingY, playerName, this.GAME_HEIGHT);
@@ -374,6 +414,7 @@ export class Match {
   }
 
   private resetMatch(): void {
+    logger.info(`Resetting match ${this.id} for a new round`);
 
     // Clear all active projectiles
     this.projectiles = [];
@@ -393,6 +434,8 @@ export class Match {
         deaths: 0,
         name: player.getName()
       });
+        logger.info(`Match ${this.id} reset complete with ${this.players.size} players`);
+
     }
     // Inform players of match reset
     for (const socket of this.sockets) {
