@@ -1,6 +1,9 @@
 {
   "name": "yt-livestream-late-tracker-server",
   "version": "1.0.0",
+  "engines": {
+    "node": ">=21.0.0"
+  },
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -8,7 +11,8 @@
     "coverage": "jest --config jest.config.ts --coverage",
     "start": "node dist/index.js",
     "dev": "dotenv -e .env -- nodemon --watch \"src/**/*.ts\" --exec ts-node src/index.ts",
-    "build": "tsc",
+    "build": "tsc --project tsconfig.json",
+    "prebuild": "rm -rf dist || true",
     "lint": "eslint . --ext \"src/**/*.ts\"",
     "lint:fix": "eslint . --ext \"src/**/*.ts\" --fix"
   },
