@@ -138,6 +138,12 @@ export class Match {
 
   }
 
+  private handlePing(callback: () => void): void {
+    if (typeof callback === 'function') {
+      callback();
+    }
+  }
+
   private initalizeFirstPlayer(socket: Socket, name: string) {
     // Setup player state
     const newPlayer = new ServerPlayer(socket.id, this.startingX, this.startingY, name, this.GAME_HEIGHT);
@@ -168,6 +174,7 @@ export class Match {
       socket.on('shoot', ({ x, y, id }) => this.handlePlayerShooting(socket.id, id, x, y));
       socket.on('toggleBystander', () => this.handleToggleBystander(socket.id));
       socket.on('disconnect', () => this.handlePlayerDisconnect(socket.id));
+      socket.on('ping', (callback) => this.handlePing(callback));
     }
   }
 
