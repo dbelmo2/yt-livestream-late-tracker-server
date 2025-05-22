@@ -1,4 +1,6 @@
+import e from 'express';
 import { Platform } from './Platform';
+import { Controller } from './PlayerController';
 
 export interface PlayerState {
   id: string;
@@ -8,11 +10,13 @@ export interface PlayerState {
   isBystander: boolean;
   name: string;
   velocityY?: number;
-  lastUpdated: number;
   isOnGround?: boolean;
 }
 
 export class ServerPlayer {
+  private speed: number = 10;
+  private jumpStrength: number = 15;
+  private maxAccelerationY: number = 9.8;
   private id: string;
   private x: number;
   private y: number;
@@ -21,22 +25,25 @@ export class ServerPlayer {
   private name: string;
   private velocityY: number = 0;
   private isOnGround: boolean = false;
-  private lastUpdated: number;
   private platforms: Platform[] = [];
   private gameHeight: number;
+  private gameWidth: number; // Default width, can be set later
+  private canDoubleJump: boolean = true;
+  private controller: Controller;
+
   // Physics constants
   private readonly gravity: number = 0.6;
   private readonly maxFallSpeed: number = 9.8;
   private readonly updateThreshold: number = 100; // ms before server takes over
   
-  constructor(id: string, x: number, y: number, name: string, gameHeight: number) {
+  constructor(id: string, x: number, y: number, name: string, gameHeight: number, gameWidth: number, controller: Controller) {
     this.id = id;
     this.x = x;
     this.y = y;
     this.name = name;
-    this.lastUpdated = Date.now();
     this.gameHeight = gameHeight;
-    
+    this.gameWidth = gameWidth
+    this.controller = controller;
   }
 
 
@@ -44,73 +51,128 @@ export class ServerPlayer {
     this.platforms = platforms;
   }
   
-public updateFromClient(x: number, y: number, velocityY: number): void {
-  const wasOnGround = this.isOnGround;
-  
-  // Check if player has moved up from ground position
-  if (wasOnGround && y < this.gameHeight && y < this.y) {
-    this.isOnGround = false;
-  }
-
-  this.x = x;
-  
-  // Ensure player doesn't go below the game floor
-  if (y >= this.gameHeight) {
-    this.y = this.gameHeight;
-    this.velocityY = 0;
-    this.isOnGround = true;
-  } else {
-    this.y = y;
-  }
-  
-  // Only update velocityY if provided by client
-  if (velocityY !== undefined) {
-    this.velocityY = velocityY;
-  }
-  
-  // If player has upward velocity, they're not on the ground
-  if (velocityY < 0) {
-    this.isOnGround = false;
-  }
-  
-  this.lastUpdated = Date.now();
-}
-  
+  public isMoving = false;
+  public updateCount = 0;
+  public timestamp: number = 0;
   public update(): void {
-    const now = Date.now();
-    const timeSinceUpdate = now - this.lastUpdated;
-    
+    // Update position based on input
 
-    // Reset isOnGround if player is above the floor
-    if (this.y < this.gameHeight && this.isOnGround) {
-      this.isOnGround = false;
+    if (!this.controller.keys.left.pressed && !this.controller.keys.right.pressed) {
+        this.isMoving = false;
+        if (this.updateCount > 0) {
+          console.log(`Update count: ${this.updateCount}`);
+        }
+        this.updateCount = 0;
     }
 
-    // Only apply physics if client hasn't updated recently
-    // and player is not on ground
-    if (timeSinceUpdate > this.updateThreshold && !this.isOnGround) {
-      // Apply gravity
 
-      this.velocityY += this.gravity;
-      
-      // Cap fall speed
-      if (this.velocityY > this.maxFallSpeed) {
-        this.velocityY = this.maxFallSpeed;
+    if (this.controller.keys.left.pressed) {
+        this.isMoving = true;
+        let xPos = Math.max(0, this.x - (this.speed));
+        if (xPos <= 25) xPos = 25; // This is needed for cube sprites as their pivot is the center.
+        this.x = xPos;
+    }
+    if (this.controller.keys.right.pressed) {
+        this.isMoving = true;
+        let xPos = Math.min(this.gameWidth, this.x + (this.speed));
+        if (xPos >= this.gameWidth - 25) xPos = this.gameWidth - 25; // This is needed for cube sprites as their pivot is the center.
+        this.x = xPos;
+    }
+
+    if (this.isMoving) {
+      this.updateCount++;
+    }
+
+    const wasOnGround = this.isOnGround;
+
+
+    // Jumping from ground or platform
+    if ((this.controller.keys.space.pressed || this.controller.keys.up.pressed) && this.isOnGround) {
+      this.velocityY = -this.jumpStrength;
+      this.isOnGround = false;
+
+      // Reset double tap flags to prevent immediate double jump
+      this.controller.keys.space.doubleTap = false;
+      this.controller.keys.up.doubleTap = false;
+    }
+
+    // Double jump logic, utilizes doubleJump from the controller. 
+    // Might need to tweak the doubleJump time window in the controller depending on jump animation time duration. 
+    if (!this.isOnGround && this.canDoubleJump) {
+      if (this.controller.keys.space.doubleTap || this.controller.keys.up.doubleTap) {
+        this.velocityY = -this.jumpStrength;
+        this.canDoubleJump = false;
+        // Clear double tap flags after use
+        this.controller.keys.space.doubleTap = false;
+        this.controller.keys.up.doubleTap = false;
       }
-      
-      // Move player
-      this.y += this.velocityY;
-      
-      // Check for floor collision
-      if (this.y >= this.gameHeight) {
+    }
+
+
+    // Apply gravity
+    this.velocityY += this.gravity;
+    this.velocityY = Math.min(this.velocityY, this.maxAccelerationY); // Limit max fall speed
+    this.y += this.velocityY;
+
+    // Check vertical bounds
+    // Floor collision
+    if (this.y >= this.gameHeight) {
         this.y = this.gameHeight;
         this.velocityY = 0;
         this.isOnGround = true;
-      } else {
-        // Check platform collisions
-        this.checkPlatformCollisions();
+        this.canDoubleJump = true; // Reset double jump when on ground
+    }
+
+    // Ceiling collision
+    if (this.y <= 0) {
+        this.y = 0;
+        this.velocityY = 0;
+    }
+    
+    // Floor collision
+    let isOnSurface = this.isOnGround;
+
+    // Check platform collisions
+    for (const platform of this.platforms) {
+
+      const platformBounds = {
+        left: platform.x,
+        right: platform.x + platform.width,
+        top: platform.y,
+        bottom: platform.y + platform.height
+      };
+
+      const playerBounds = {
+        left: this.x - 25,
+        right: this.x + 25,
+        top: this.y - 50,
+        bottom: this.y // Assuming player height is 50
+      }
+      
+      // Calculate the previous position based on velocity
+      const prevBottom = playerBounds.bottom - this.velocityY;
+      
+      // Check for platform collision with tunneling prevention
+      const isGoingDown = this.velocityY > 0;
+      const wasAbovePlatform = prevBottom <= platformBounds.top;
+      const isWithinPlatformWidth = playerBounds.right > platformBounds.left && 
+      playerBounds.left < platformBounds.right;
+      const hasCollidedWithPlatform = playerBounds.bottom >= platformBounds.top;
+      
+      // Check if we're falling, were above platform last frame, and are horizontally aligned
+      if (isGoingDown && wasAbovePlatform && isWithinPlatformWidth && hasCollidedWithPlatform) {
+          this.y = platformBounds.top;
+          this.velocityY = 0;
+          isOnSurface = true;
+          break;
       }
     }
+
+    this.isOnGround = isOnSurface;
+    if (isOnSurface && !wasOnGround) {
+        this.canDoubleJump = true;
+    }
+
   }
   
   private checkPlatformCollisions(): void {
@@ -191,8 +253,11 @@ public updateFromClient(x: number, y: number, velocityY: number): void {
       isBystander: this.isBystander,
       name: this.name,
       velocityY: this.velocityY,
-      lastUpdated: this.lastUpdated,
       isOnGround: this.isOnGround
     };
+  }
+
+  public getController(): Controller {
+    return this.controller;
   }
 }
