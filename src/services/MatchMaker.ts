@@ -4,6 +4,11 @@ import { Match } from "./Match";
 
 export type Region = 'NA' | 'EU' | 'ASIA' | 'GLOBAL';
 
+
+const BROADCAST_HZ = 20;                   // 50 ms
+const FRAME_MS     = 1000 / BROADCAST_HZ;  // outer‑loop cadence
+
+
 type QueuedPlayer = {
   id: string;
   socket: any; // or socket.io Socket type
@@ -13,9 +18,17 @@ type QueuedPlayer = {
 };
 
 class Matchmaker {
-  private matches: Map<string, Match> = new Map();
+  private matches: Map<string, Match>;
+  private lastBroadcast: number = Date.now();
+  
+  constructor() {
+    // Start the game loop
+    this.matches = new Map<string, Match>();
+    this.serverLoop();
+  }
 
-  enqueuePlayer(player: QueuedPlayer) {
+
+  public enqueuePlayer(player: QueuedPlayer) {
     // First try to find an existing match in the player's region
     const match = this.findMatchInRegion(player.region);
 
@@ -41,9 +54,46 @@ class Matchmaker {
     }
   }
 
+  public getMatch(matchId: string): Match | undefined {
+    return this.matches.get(matchId);
+  }
+
+  public getActiveMatches(): Match[] {
+    return Array.from(this.matches.values());
+  }
+
+
+
+  private serverLoop = () => {
+    const now = Date.now();
+    const delta = now - this.lastBroadcast;
+
+    for (const match of this.matches.values()) {
+      const shouldRemove = match.getShouldRemove();
+      if (match.getIsReady() && shouldRemove === false) {
+        // TODO: Consider passing delta here and using that for all Matches.
+        match.update();
+      } else if (shouldRemove) {
+        match.cleanUpSession();
+        this.removeMatch(match.getId());
+      } else {
+        logger.info(`Match ${match.getId()} is not ready yet`);
+      }
+    }
+
+    // Broadcast snapshots at 20 Hz
+    if (delta >= FRAME_MS) {
+      for (const match of this.matches.values()) match.broadcastGameState();
+      this.lastBroadcast = now;
+    }
+
+    // Wake up as soon as the event loop is idle
+    setTimeout(this.serverLoop, 4);    
+  }
+
   private findMatchInRegion(region: Region): Match | null {
     for (const match of this.matches.values()) {
-      if (match.getRegion() === region) {
+      if (match.getRegion() === region && match.getNumberOfPlayers() < config.maxPlayers) {
         return match;
       }
     }
@@ -54,17 +104,9 @@ class Matchmaker {
     return `match-${Math.random().toString(36).substring(2, 8)}`;
   }
 
-  removeMatch(matchId: string) {
+  private removeMatch(matchId: string) {
     this.matches.delete(matchId);
     logger.info(`Match ${matchId} removed from matchmaker`);
-  }
-
-  getMatch(matchId: string): Match | undefined {
-    return this.matches.get(matchId);
-  }
-
-  getActiveMatches(): Match[] {
-    return Array.from(this.matches.values());
   }
 }
 

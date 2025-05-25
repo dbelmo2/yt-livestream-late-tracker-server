@@ -1,4 +1,13 @@
 
+
+export type ProjectileState = {
+  id: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  ownerId: string;
+};
 export class Projectile  {
   protected speed: number;
   protected lifespan: number;
@@ -67,27 +76,39 @@ export class Projectile  {
     }, this.lifespan)
   }
 
-public getId(): string {
-    return this.id;
-}
+  public getId(): string {
+      return this.id;
+  }
 
-public getOwnerId(): string {
-    return this.ownerId;
-}
+  public getOwnerId(): string {
+      return this.ownerId;
+  }
 
-public getX(): number {
-    return this.x;
-}
+  public getX(): number {
+      return this.x;
+  }
 
-public getY(): number {
-    return this.y;
-}
+  public getY(): number {
+      return this.y;
+  }
 
-public getVX(): number {
-    return this.vx;
-}
+  public getVX(): number {
+      return this.vx;
+  }
 
-public getVY(): number {
-    return this.vy;
-}
+  public getVY(): number {
+      return this.vy;
+  }
+
+  public getState(): ProjectileState {
+      return {
+        ownerId: this.ownerId,
+        id: this.id,
+        x: this.x,
+        y: this.y,
+        vx: this.vx,
+        vy: this.vy
+    };
+  }
+
 }

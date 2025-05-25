@@ -1,4 +1,4 @@
-import e from 'express';
+import logger from '../utils/logger';
 import { Platform } from './Platform';
 import { Controller } from './PlayerController';
 
@@ -13,78 +13,88 @@ export interface PlayerState {
   isOnGround?: boolean;
 }
 
-export class ServerPlayer {
+export interface KeyboardEvent {
+  type: string;
+  key: string;
+}
+
+export interface MouseEvent {
+  type: string;
+  x: number;
+  y: number;
+}
+
+export interface PlayerInput {
+  seq: number,
+  event: MouseEvent | KeyboardEvent
+}
+
+export class Player {
+  private readonly GAME_WIDTH: number;
+  private readonly GAME_HEIGHT: number;
+  private readonly MAX_ACCELERATION: number = 9.8;
+  private readonly GRAVITY: number = 0.6;
+
   private speed: number = 10;
   private jumpStrength: number = 15;
-  private maxAccelerationY: number = 9.8;
   private id: string;
+  private hp: number = 100;
   private x: number;
   private y: number;
-  private hp: number = 100;
+  private velocityY: number = 0;
   private isBystander: boolean = true;
   private name: string;
-  private velocityY: number = 0;
   private isOnGround: boolean = false;
   private platforms: Platform[] = [];
-  private gameHeight: number;
-  private gameWidth: number; // Default width, can be set later
   private canDoubleJump: boolean = true;
+  private inputQueue: PlayerInput[] = [];
   private controller: Controller;
+  private lastProcessedInput: number = -1;
 
   // Physics constants
-  private readonly gravity: number = 0.6;
-  private readonly maxFallSpeed: number = 9.8;
-  private readonly updateThreshold: number = 100; // ms before server takes over
-  
-  constructor(id: string, x: number, y: number, name: string, gameHeight: number, gameWidth: number, controller: Controller) {
+  constructor(
+    id: string, 
+    x: number, 
+    y: number, 
+    name: string, 
+    gameHeight: number, 
+    gameWidth: number, 
+    controller: Controller
+  ) {
     this.id = id;
     this.x = x;
     this.y = y;
     this.name = name;
-    this.gameHeight = gameHeight;
-    this.gameWidth = gameWidth
     this.controller = controller;
+    this.GAME_HEIGHT = gameHeight;
+    this.GAME_WIDTH = gameWidth
   }
 
+
+  public queueInput(input: PlayerInput): void {
+    // Check if the input is a duplicate of the last processed input
+    if (this.lastProcessedInput === input.seq) {
+      //return; // Ignore duplicate input
+    }
+    this.inputQueue.push(input);
+    this.lastProcessedInput = input.seq; // Update the last processed input
+  }
 
   public setPlatforms(platforms: Platform[]): void {
     this.platforms = platforms;
   }
   
-  public isMoving = false;
-  public updateCount = 0;
-  public timestamp: number = 0;
   public update(): void {
-    // Update position based on input
-
-    if (!this.controller.keys.left.pressed && !this.controller.keys.right.pressed) {
-        this.isMoving = false;
-        if (this.updateCount > 0) {
-          console.log(`Update count: ${this.updateCount}`);
-        }
-        this.updateCount = 0;
-    }
-
-
     if (this.controller.keys.left.pressed) {
-        this.isMoving = true;
         let xPos = Math.max(0, this.x - (this.speed));
         if (xPos <= 25) xPos = 25; // This is needed for cube sprites as their pivot is the center.
         this.x = xPos;
     }
     if (this.controller.keys.right.pressed) {
-        this.isMoving = true;
-        let xPos = Math.min(this.gameWidth, this.x + (this.speed));
-        if (xPos >= this.gameWidth - 25) xPos = this.gameWidth - 25; // This is needed for cube sprites as their pivot is the center.
+        let xPos = Math.min(this.GAME_WIDTH, this.x + (this.speed));
+        if (xPos >= this.GAME_WIDTH - 25) xPos = this.GAME_WIDTH - 25; // This is needed for cube sprites as their pivot is the center.
         this.x = xPos;
     }
-
-    if (this.isMoving) {
-      this.updateCount++;
-    }
-
-    const wasOnGround = this.isOnGround;
-
 
     // Jumping from ground or platform
     if ((this.controller.keys.space.pressed || this.controller.keys.up.pressed) && this.isOnGround) {
@@ -109,15 +119,18 @@ export class ServerPlayer {
     }
 
 
+    // Horizontal movement
+    const wasOnGround = this.isOnGround;
+    // TODO: Investigate whether the gravity could should be moved elsewhere...
+    // Concerned about the fact that the rate at which a player falls could vary..
     // Apply gravity
-    this.velocityY += this.gravity;
-    this.velocityY = Math.min(this.velocityY, this.maxAccelerationY); // Limit max fall speed
+    this.velocityY += this.GRAVITY;
+    this.velocityY = Math.min(this.velocityY, this.MAX_ACCELERATION); // Limit fall speed
     this.y += this.velocityY;
 
-    // Check vertical bounds
     // Floor collision
-    if (this.y >= this.gameHeight) {
-        this.y = this.gameHeight;
+    if (this.y >= this.GAME_HEIGHT) {
+        this.y = this.GAME_HEIGHT;
         this.velocityY = 0;
         this.isOnGround = true;
         this.canDoubleJump = true; // Reset double jump when on ground
@@ -134,7 +147,6 @@ export class ServerPlayer {
 
     // Check platform collisions
     for (const platform of this.platforms) {
-
       const platformBounds = {
         left: platform.x,
         right: platform.x + platform.width,
@@ -172,40 +184,21 @@ export class ServerPlayer {
     if (isOnSurface && !wasOnGround) {
         this.canDoubleJump = true;
     }
-
   }
   
-  private checkPlatformCollisions(): void {
-    // Simple platform collision - similar to client-side but simplified
-    for (const platform of this.platforms) {
-      // Check if player is above platform and falling
-      if (this.velocityY > 0) {
-        const playerBottom = this.y;
-        const playerLeft = this.x - 25;
-        const playerRight = this.x + 25;
-        
-        const platformTop = platform.y;
-        const platformLeft = platform.x;
-        const platformRight = platform.x + platform.width;
-        
-        // Previous position
-        const prevBottom = playerBottom - this.velocityY;
-        
-        // Check if we're falling onto the platform
-        if (prevBottom <= platformTop && 
-            playerBottom >= platformTop &&
-            playerRight > platformLeft && 
-            playerLeft < platformRight) {
-          
-          this.y = platformTop;
-          this.velocityY = 0;
-          this.isOnGround = true;
-          break;
-        }
-      }
+
+  private handleKeyboardEvent({ type, key }: KeyboardEvent): void {  
+    console.log(`Handling keyboard event: ${type}, key: ${key}`);
+    if (type === 'keyDown') {
+      this.controller.keyDownHandler(key);
+    } else if (type === 'keyUp') {
+      this.controller.keyUpHandler(key);
+    } else {
+      logger.error(`Unknown event type: ${type}`);  
     }
   }
-  
+
+
   public setIsBystander(value: boolean): void {
     this.isBystander = value;
   }
@@ -226,7 +219,6 @@ export class ServerPlayer {
     this.hp = 100;
   }
   
-
   public getId(): string {
     return this.id;
   }
@@ -257,7 +249,28 @@ export class ServerPlayer {
     };
   }
 
-  public getController(): Controller {
-    return this.controller;
+  public integrateInput(): void {
+    const max = 1;
+    let numIntegrations = 0;
+    //console.log('Integrating input. Queue length:', this.inputQueue.length);
+    while (this.inputQueue.length > 0 && numIntegrations < max) {
+      const input = this.inputQueue.shift();
+      const inputEvent = input?.event
+      console.log(`Integrating input: ${JSON.stringify(inputEvent)}`);
+      if (!inputEvent || !inputEvent.type) return;
+      // Determine event type and handle accordingly
+      if (inputEvent.type === 'keyDown' || inputEvent.type === 'keyUp') {
+        this.handleKeyboardEvent(inputEvent as KeyboardEvent);
+      } // TODO: Handle mouse events similarly
+      numIntegrations++;
+    }
+    //console.log('Integrated input. Remaining queue length:', this.inputQueue.length);
   }
+
+
+ 
+  
+
+
+
 }

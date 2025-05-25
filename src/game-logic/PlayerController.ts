@@ -23,7 +23,6 @@ export class Controller {
     xR: number | undefined,
     yR: number | undefined,
     justReleased: boolean
-
   };
   
   constructor() {
@@ -50,7 +49,7 @@ export class Controller {
 
     state.doubleTap = state.doubleTap || now - state.timestamp < 500;
     state.pressed = true;
-
+    console.log(`Finished keyDownHandler for ${key}`, state);
   }
 
   public keyUpHandler(eventCode: string): void {
