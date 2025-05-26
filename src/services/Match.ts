@@ -56,6 +56,7 @@ export class Match {
   private isReady = false; // Utilized by parent loop
   private accumulator: number = 0;
   private shouldRemove = false;
+  private serverTick = 0;
 
   constructor(
     socket: Socket,
@@ -152,8 +153,8 @@ export class Match {
         this.integratePlayerInputs();
         this.updatePhysics(this.TIME_STEP / 1000); // Pass fixed delta
         this.accumulator -= this.TIME_STEP;
+        this.serverTick++;
       }
-
     } catch (error) {
       this.handleError(error as Error, 'gameLoop');
     }
@@ -340,6 +341,7 @@ export class Match {
         .map((projectile) => projectile.getState());
 
       const gameState = {
+        serverTick: this.serverTick,
         players: this.getPlayerStates(),
         projectiles: projectileState,
         scores: Array.from(this.playerScores.entries()).map(([playerId, score]) => ({
@@ -347,10 +349,11 @@ export class Match {
           ...score
         }))
       };
-      //console.log(`player states being broadcasted: ${JSON.stringify(gameState.players)}`);
+
       for (const socket of this.sockets) {
         socket.emit('stateUpdate', gameState);
       }
+
     } catch (error) {
       this.handleError(error as Error, 'broadcastState');
     }

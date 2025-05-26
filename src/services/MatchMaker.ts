@@ -87,7 +87,7 @@ class Matchmaker {
       this.lastBroadcast = now;
     }
 
-    // Wake up as soon as the event loop is idle
+    // Wake up as soon as the event loop is idle, with a 4ms delay
     setTimeout(this.serverLoop, 4);    
   }
 
