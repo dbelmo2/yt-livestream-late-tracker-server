@@ -48,7 +48,7 @@ export class Match {
   private id: string;
   private region: Region;
   private timeoutIds: Set<NodeJS.Timeout> = new Set();
-  private playerScores: Map<string, PlayerScore> = new Map();d
+  private playerScores: Map<string, PlayerScore> = new Map();
   private sockets: Socket[] = [];
   private respawnQueue: Map<string, string> = new Map();
   private matchIsActive = false;
