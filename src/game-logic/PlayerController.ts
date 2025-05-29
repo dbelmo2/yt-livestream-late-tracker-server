@@ -13,7 +13,7 @@ const keyMap: Record<string, keyof Controller['keys']> = {
 export class Controller {
   public readonly keys: Record<
     'up' | 'down' | 'left' | 'right' | 'space',
-    { pressed: boolean; doubleTap: boolean; timestamp: number }
+    { pressed: boolean; doubleTap: boolean; timestamp: number; downTime: number }
   >;
 
   public readonly mouse: {
@@ -27,43 +27,44 @@ export class Controller {
   
   constructor() {
     this.keys = {
-      up: { pressed: false, doubleTap: false, timestamp: 0 },
-      down: { pressed: false, doubleTap: false, timestamp: 0 },
-      left: { pressed: false, doubleTap: false, timestamp: 0 },
-      right: { pressed: false, doubleTap: false, timestamp: 0 },
-      space: { pressed: false, doubleTap: false, timestamp: 0 },
+      up: { pressed: false, doubleTap: false, timestamp: 0, downTime: 0 },
+      down: { pressed: false, doubleTap: false, timestamp: 0, downTime: 0 },
+      left: { pressed: false, doubleTap: false, timestamp: 0, downTime: 0 },
+      right: { pressed: false, doubleTap: false, timestamp: 0, downTime: 0 },
+      space: { pressed: false, doubleTap: false, timestamp: 0, downTime: 0 },
     };
     
     this.mouse = { pressed: false, x: undefined, y: undefined, justReleased: false, xR: undefined, yR: undefined };
   }
 
-  private downTime = 0;
+
+
   public keyDownHandler(eventCode: string): void {
-    console.log('keyDownHandler', eventCode);
     const key = keyMap[eventCode];
     if (!key) return;
 
     const now = Date.now();
-    this.downTime = now;
     const state = this.keys[key];
-
+    
+    // Record down time for this specific key
+    state.downTime = now;
     state.doubleTap = state.doubleTap || now - state.timestamp < 500;
     state.pressed = true;
-    console.log(`Finished keyDownHandler for ${key}`, state);
   }
 
   public keyUpHandler(eventCode: string): void {
-    console.log('keyUpHandler', eventCode);
     const key = keyMap[eventCode];
     if (!key) return;
-
-
-    const totalTime = Date.now() - this.downTime;
-    console.log('totalTime key was down', totalTime);
 
     const now = Date.now();
     const state = this.keys[key];
 
+    // Calculate duration using key-specific down time
+    const totalTime = state.downTime > 0 ? now - state.downTime : 0;
+    console.log(`Key ${key} was down for ${totalTime}ms`);
+    
+    // Reset the down time for this key
+    state.downTime = 0;
     state.pressed = false;
 
     if (state.doubleTap) {
