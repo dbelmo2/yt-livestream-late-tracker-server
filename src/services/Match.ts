@@ -37,7 +37,7 @@ export class Match {
   private readonly GAME_HEIGHT = 1080; // Fixed game height
   private STARTING_X = 100;
   private STARTING_Y = 100;
-  private TIME_STEP = 15; // 15ms per frame
+  private TIME_STEP = 16.67; // 15ms per frame
 
   private worldState: WorldState = {
     players: new Map(),
