@@ -157,7 +157,6 @@ export class Match {
     return this.region;
   }
 
-
   public update(): void {
     try {
       // Calculate elapsed time since last loop
@@ -219,9 +218,16 @@ export class Match {
 
       while (numIntegrations < max) {
         const inputPayload = player.dequeueInput();
+        if (!inputPayload) {
+          numIntegrations = max; // No more inputs to process
+        }
         player.update(inputPayload?.vector || new Vector2(0,0), dt);
   
-        if (inputPayload) player.setLastProcessedInput(inputPayload?.tick);
+        if (inputPayload) {
+          player.setLastProcessedInput(inputPayload?.tick);
+        }
+        console.log(`Player is at position (${player.getX()}, ${player.getY()}) after processing input at tick ${player.getLastProcessedInput() + player.getNumTicksWithoutInput()}`);
+
         numIntegrations++;
       }
     }
@@ -286,6 +292,7 @@ export class Match {
   }
 
   private handlePlayerInputPayload(playerId: string, playerInput: InputPayload): void {
+    console.log(`Received input from player ${playerId}: ${JSON.stringify(playerInput)}`);
     const player = this.worldState.players.get(playerId);
     if (!player) {
       logger.error(`Player ${playerId} attempted to send input but was not found in match ${this.id}`);

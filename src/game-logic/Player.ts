@@ -17,7 +17,7 @@ export class Player {
   public readonly JUMP_STRENGTH = 750;
   public readonly GRAVITY = 1500;
   public readonly MAX_FALL_SPEED = 1500;
-  
+
   private id: string;
   private hp: number = 100;
   private x: number;
@@ -29,7 +29,7 @@ export class Player {
   private platforms: Platform[] = [];
   private canDoubleJump: boolean = true;
   private inputQueue: InputPayload[] = [];
-  private lastProcessedInput: number = -1;
+  private lastProcessedInput: number = 0;
   private gameBounds: { left: number; right: number; top: number; bottom: number } | null = null;
   private numTicksWithoutInput: number = 0;
 
@@ -50,12 +50,7 @@ export class Player {
 
 
   public queueInput(input: InputPayload): void {
-    // Check if the input is a duplicate of the last processed input
-    if (this.lastProcessedInput === input.tick) {
-      //return; // Ignore duplicate input
-    }
     this.inputQueue.push(input);
-    this.lastProcessedInput = input.tick; // Update the last processed input
   }
 
   public setPlatforms(platforms: Platform[]): void {
@@ -77,6 +72,7 @@ export class Player {
   }
 
   public update(inputVector: Vector2, dt: number): void {
+      console.log(`Player ${this.id} update called with inputVector: ${inputVector.x}, ${inputVector.y} and dt: ${dt}`);
       //const wasOnGround = this.isOnGround;
       if (inputVector.x === 0 && inputVector.y === 0) {
           this.numTicksWithoutInput++;
