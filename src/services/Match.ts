@@ -8,9 +8,10 @@ import {
   PLAYER_WIDTH,
   PLAYER_HEIGHT
 } from '../game-logic/collision';
-import { Player, PlayerInput, PlayerState } from '../game-logic/Player';
+import { Player, PlayerState } from '../game-logic/Player';
 import { Platform } from '../game-logic/Platform';
 import { Controller } from '../game-logic/PlayerController';
+import { Vector2 } from '../game-logic/Vector';
 
 
 type Region = 'NA' | 'EU' | 'ASIA' | 'GLOBAL';
@@ -29,15 +30,39 @@ export type WorldState = {
 
 };
 
+export type PlayerStatePayload = {
+  id: string;
+  position: Vector2;
+  hp: number;
+  isBystander: boolean;
+  name: string;
+  velocity: Vector2;
+  tick: number;
+
+}
+
+export type InputPayload = {
+  tick: number;
+  vector: Vector2;
+}
 
 const MAX_KILL_AMOUNT = 5; // Adjust this value as needed
 
 export class Match {
   private readonly GAME_WIDTH = 1920;  // Fixed game width
   private readonly GAME_HEIGHT = 1080; // Fixed game height
-  private STARTING_X = 100;
-  private STARTING_Y = 100;
-  private TIME_STEP = 16.67; // 15ms per frame
+  private readonly STARTING_X = 100;
+  private readonly STARTING_Y = 100;
+  private readonly TICK_RATE = 120; // 60 ticks per second
+  private readonly MIN_MS_BETWEEN_TICKS = 1000 / this.TICK_RATE;
+  private readonly MIN_S_BETWEEN_TICKS = this.MIN_MS_BETWEEN_TICKS / 1000; // Convert to seconds
+  private readonly BUFFER_SIZE = 1024;
+  private readonly GAME_BOUNDS = {
+    left: 0,
+    right: this.GAME_WIDTH,
+    top: 0,
+    bottom: this.GAME_HEIGHT
+  };
 
   private worldState: WorldState = {
     players: new Map(),
@@ -86,9 +111,7 @@ export class Match {
       this.STARTING_X, 
       this.STARTING_Y, 
       name, 
-      this.GAME_HEIGHT, 
-      this.GAME_WIDTH, 
-      controller
+      this.GAME_BOUNDS
     );
     serverPlayer.setPlatforms(this.worldState.platforms);
     // Initialize new player as bystander
@@ -149,10 +172,9 @@ export class Match {
       this.accumulator += cappedFrameTime;
 
       // Run fixed updates as needed
-      while (this.accumulator >= this.TIME_STEP) {
-        this.integratePlayerInputs();
-        this.updatePhysics(this.TIME_STEP / 1000); // Pass fixed delta
-        this.accumulator -= this.TIME_STEP;
+      while (this.accumulator >= this.MIN_MS_BETWEEN_TICKS) {
+        this.updatePhysics(this.MIN_S_BETWEEN_TICKS); // Pass fixed delta
+        this.accumulator -= this.MIN_MS_BETWEEN_TICKS;
         this.serverTick++;
       }
     } catch (error) {
@@ -186,12 +208,22 @@ export class Match {
     logger.info(`Match ${this.id} ended and cleaned up \n\n`);
   }
 
-
-
   // TODO: Would this be faster if we make it promise based and use promise.all?
-  private integratePlayerInputs(): void {
+  private integratePlayerInputs(dt: number) {
     for (const player of this.worldState.players.values()) {
-      player.integrateInput();
+      const max = 1;
+      let numIntegrations = 0;
+
+      // TODO: Address isse of number of inputs being processed and applying gravity multiple times...
+      // Idea... scale changes in update() based on how many inputs are processed...?
+
+      while (numIntegrations < max) {
+        const inputPayload = player.dequeueInput();
+        player.update(inputPayload?.vector || new Vector2(0,0), dt);
+  
+        if (inputPayload) player.setLastProcessedInput(inputPayload?.tick);
+        numIntegrations++;
+      }
     }
   };
 
@@ -208,9 +240,7 @@ export class Match {
   }
 
   private handlePing(callback: () => void): void {
-    if (typeof callback === 'function') {
       callback();
-    }
   }
 
   private initalizeFirstPlayer(socket: Socket, name: string) {
@@ -221,9 +251,7 @@ export class Match {
       this.STARTING_X, 
       this.STARTING_Y, 
       name, 
-      this.GAME_HEIGHT, 
-      this.GAME_WIDTH, 
-      controller
+      this.GAME_BOUNDS
     );
     newPlayer.setPlatforms(this.worldState.platforms);
     this.worldState.players.set(socket.id, newPlayer);
@@ -253,11 +281,11 @@ export class Match {
       socket.on('toggleBystander', () => this.handleToggleBystander(socket.id));
       socket.on('disconnect', () => this.handlePlayerDisconnect(socket.id));
       socket.on('ping', (callback) => this.handlePing(callback));
-      socket.on('playerInput', (playerInput: PlayerInput) => this.handlePlayerInput(socket.id, playerInput));
+      socket.on('playerInput', (inputPayload: InputPayload) => this.handlePlayerInputPayload(socket.id, inputPayload));
     }
   }
 
-  private handlePlayerInput(playerId: string, playerInput: PlayerInput): void {
+  private handlePlayerInputPayload(playerId: string, playerInput: InputPayload): void {
     const player = this.worldState.players.get(playerId);
     if (!player) {
       logger.error(`Player ${playerId} attempted to send input but was not found in match ${this.id}`);
@@ -301,15 +329,12 @@ export class Match {
       // Respawn any players in the respawn queue
 
       for (const [playerId, playerName] of this.respawnQueue) {
-        const controller = new Controller();
         const respawningPlayer = new Player(
           playerId, 
           this.STARTING_X, 
           this.STARTING_Y, 
           playerName, 
-          this.GAME_HEIGHT, 
-          this.GAME_WIDTH, 
-          controller
+          this.GAME_BOUNDS
         );
         respawningPlayer.setIsBystander(false);
         respawningPlayer.setPlatforms(this.worldState.platforms);
@@ -364,9 +389,7 @@ export class Match {
   private updatePhysics(dt: number): void {
     try {
       // Process player updates with fixed delta
-      for (const player of this.worldState.players.values()) {
-        player.update(); // Use 1.0 since we're running at fixed intervals
-      }
+      this.integratePlayerInputs(dt);
       
       // Process projectile updates
       const projectilesToRemove: number[] = [];
@@ -510,15 +533,12 @@ export class Match {
         const needsRespawn = this.respawnQueue.has(playerId);
         if (needsRespawn === false) return; // Player is not in respawn queue
         this.respawnQueue.delete(playerId);
-        const controller = new Controller();
         const player = new Player(
           playerId, 
           this.STARTING_X, 
           this.STARTING_Y, 
-          playerName, 
-          this.GAME_HEIGHT, 
-          this.GAME_WIDTH, 
-          controller
+          playerName,
+          this.GAME_BOUNDS  
         );
         player.setIsBystander(false)
         player.setPlatforms(this.worldState.platforms);
@@ -572,14 +592,15 @@ export class Match {
 
   private getPlayerStates(): PlayerState[] {
     return Array.from(this.worldState.players.values()).map((player) => {
-      const { id, x, y, hp, isBystander, name } = player.getState();
+      const { id, hp, isBystander, name, position, velocity } = player.getState();
       return {
         id,
-        x,
-        y,
         hp,
         isBystander,
-        name
+        name,
+        position,
+        velocity,
+        tick: player.getLastProcessedInput() + player.getNumTicksWithoutInput()
       };
     });
   }

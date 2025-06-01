@@ -1,55 +1,37 @@
 import logger from '../utils/logger';
 import { Platform } from './Platform';
 import { Controller } from './PlayerController';
-
+import { InputPayload } from '../services/Match';
+import { Vector2 } from './Vector';
 export interface PlayerState {
   id: string;
-  x: number;
-  y: number;
+  position: Vector2;
   hp: number;
   isBystander: boolean;
   name: string;
-  velocityY?: number;
+  velocity: Vector2;
   isOnGround?: boolean;
 }
-
-export interface KeyboardEvent {
-  type: string;
-  key: string;
-}
-
-export interface MouseEvent {
-  type: string;
-  x: number;
-  y: number;
-}
-
-export interface PlayerInput {
-  seq: number,
-  event: MouseEvent | KeyboardEvent
-}
-
 export class Player {
-  private readonly GAME_WIDTH: number;
-  private readonly GAME_HEIGHT: number;
-  private readonly MAX_ACCELERATION: number = 9.8;
-  private readonly GRAVITY: number = 0.6;
-
-  private speed: number = 10;
-  private jumpStrength: number = 15;
+  public readonly SPEED = 750;
+  public readonly JUMP_STRENGTH = 750;
+  public readonly GRAVITY = 1500;
+  public readonly MAX_FALL_SPEED = 1500;
+  
   private id: string;
   private hp: number = 100;
   private x: number;
   private y: number;
-  private velocityY: number = 0;
+  private velocity: Vector2 = new Vector2(0, 0);
   private isBystander: boolean = true;
   private name: string;
   private isOnGround: boolean = false;
   private platforms: Platform[] = [];
   private canDoubleJump: boolean = true;
-  private inputQueue: PlayerInput[] = [];
-  private controller: Controller;
+  private inputQueue: InputPayload[] = [];
   private lastProcessedInput: number = -1;
+  private gameBounds: { left: number; right: number; top: number; bottom: number } | null = null;
+  private numTicksWithoutInput: number = 0;
 
   // Physics constants
   constructor(
@@ -57,147 +39,96 @@ export class Player {
     x: number, 
     y: number, 
     name: string, 
-    gameHeight: number, 
-    gameWidth: number, 
-    controller: Controller
+    gameBounds: { left: number; right: number; top: number; bottom: number } | null = null
   ) {
     this.id = id;
     this.x = x;
     this.y = y;
     this.name = name;
-    this.controller = controller;
-    this.GAME_HEIGHT = gameHeight;
-    this.GAME_WIDTH = gameWidth
+    this.gameBounds = gameBounds;
   }
 
 
-  public queueInput(input: PlayerInput): void {
+  public queueInput(input: InputPayload): void {
     // Check if the input is a duplicate of the last processed input
-    if (this.lastProcessedInput === input.seq) {
+    if (this.lastProcessedInput === input.tick) {
       //return; // Ignore duplicate input
     }
     this.inputQueue.push(input);
-    this.lastProcessedInput = input.seq; // Update the last processed input
+    this.lastProcessedInput = input.tick; // Update the last processed input
   }
 
   public setPlatforms(platforms: Platform[]): void {
     this.platforms = platforms;
   }
   
-  public update(): void {
-    if (this.controller.keys.left.pressed) {
-        let xPos = Math.max(0, this.x - (this.speed));
-        if (xPos <= 25) xPos = 25; // This is needed for cube sprites as their pivot is the center.
-        this.x = xPos;
-    }
-    if (this.controller.keys.right.pressed) {
-        let xPos = Math.min(this.GAME_WIDTH, this.x + (this.speed));
-        if (xPos >= this.GAME_WIDTH - 25) xPos = this.GAME_WIDTH - 25; // This is needed for cube sprites as their pivot is the center.
-        this.x = xPos;
-    }
 
-    // Jumping from ground or platform
-    if ((this.controller.keys.space.pressed || this.controller.keys.up.pressed) && this.isOnGround) {
-      this.velocityY = -this.jumpStrength;
-      this.isOnGround = false;
-
-      // Reset double tap flags to prevent immediate double jump
-      this.controller.keys.space.doubleTap = false;
-      this.controller.keys.up.doubleTap = false;
-    }
-
-    // Double jump logic, utilizes doubleJump from the controller. 
-    // Might need to tweak the doubleJump time window in the controller depending on jump animation time duration. 
-    if (!this.isOnGround && this.canDoubleJump) {
-      if (this.controller.keys.space.doubleTap || this.controller.keys.up.doubleTap) {
-        this.velocityY = -this.jumpStrength;
-        this.canDoubleJump = false;
-        // Clear double tap flags after use
-        this.controller.keys.space.doubleTap = false;
-        this.controller.keys.up.doubleTap = false;
-      }
-    }
-
-
-    // Horizontal movement
-    const wasOnGround = this.isOnGround;
-    // TODO: Investigate whether the gravity could should be moved elsewhere...
-    // Concerned about the fact that the rate at which a player falls could vary..
-    // Apply gravity
-    this.velocityY += this.GRAVITY;
-    this.velocityY = Math.min(this.velocityY, this.MAX_ACCELERATION); // Limit fall speed
-    this.y += this.velocityY;
-
-    // Floor collision
-    if (this.y >= this.GAME_HEIGHT) {
-        this.y = this.GAME_HEIGHT;
-        this.velocityY = 0;
-        this.isOnGround = true;
-        this.canDoubleJump = true; // Reset double jump when on ground
-    }
-
-    // Ceiling collision
-    if (this.y <= 0) {
-        this.y = 0;
-        this.velocityY = 0;
-    }
-    
-    // Floor collision
-    let isOnSurface = this.isOnGround;
-
-    // Check platform collisions
-    for (const platform of this.platforms) {
-      const platformBounds = {
-        left: platform.x,
-        right: platform.x + platform.width,
-        top: platform.y,
-        bottom: platform.y + platform.height
-      };
-
-      const playerBounds = {
-        left: this.x - 25,
-        right: this.x + 25,
-        top: this.y - 50,
-        bottom: this.y // Assuming player height is 50
-      }
-      
-      // Calculate the previous position based on velocity
-      const prevBottom = playerBounds.bottom - this.velocityY;
-      
-      // Check for platform collision with tunneling prevention
-      const isGoingDown = this.velocityY > 0;
-      const wasAbovePlatform = prevBottom <= platformBounds.top;
-      const isWithinPlatformWidth = playerBounds.right > platformBounds.left && 
-      playerBounds.left < platformBounds.right;
-      const hasCollidedWithPlatform = playerBounds.bottom >= platformBounds.top;
-      
-      // Check if we're falling, were above platform last frame, and are horizontally aligned
-      if (isGoingDown && wasAbovePlatform && isWithinPlatformWidth && hasCollidedWithPlatform) {
-          this.y = platformBounds.top;
-          this.velocityY = 0;
-          isOnSurface = true;
-          break;
-      }
-    }
-
-    this.isOnGround = isOnSurface;
-    if (isOnSurface && !wasOnGround) {
-        this.canDoubleJump = true;
-    }
+  public setLastProcessedInput(tick: number): void {
+    this.lastProcessedInput = tick;
   }
   
 
-  private handleKeyboardEvent({ type, key }: KeyboardEvent): void {  
-    console.log(`Handling keyboard event: ${type}, key: ${key}`);
-    if (type === 'keyDown') {
-      this.controller.keyDownHandler(key);
-    } else if (type === 'keyUp') {
-      this.controller.keyUpHandler(key);
-    } else {
-      logger.error(`Unknown event type: ${type}`);  
-    }
+  public getLastProcessedInput(): number {
+    return this.lastProcessedInput;
+  } 
+
+  public getNumTicksWithoutInput(): number {
+    return this.numTicksWithoutInput;
   }
 
+  public update(inputVector: Vector2, dt: number): void {
+      //const wasOnGround = this.isOnGround;
+      if (inputVector.x === 0 && inputVector.y === 0) {
+          this.numTicksWithoutInput++;
+      } else {
+          this.numTicksWithoutInput = 0; // Reset if we have input
+      }
+      
+      // 1. First we update our velocity vector based on input and physics.
+      // Horizontal Movement
+      if (inputVector.x !== 0) {
+        //inputVector.normalize();
+        this.velocity.x = inputVector.x * this.SPEED;
+      } else {
+        this.velocity.x = 0;
+      }
+
+      // Jumping
+      if ((inputVector.y < 0 && this.isOnGround) || (inputVector.y < 0 && this.canDoubleJump)) {
+        this.velocity.y = inputVector.y * this.JUMP_STRENGTH;
+        this.canDoubleJump = this.isOnGround;
+        this.isOnGround = false;
+      }
+
+
+
+      // Gravity
+      this.velocity.y += this.GRAVITY * dt;
+      this.velocity.y = Math.min(this.velocity.y, this.MAX_FALL_SPEED); 
+
+
+      // 2. Once the velocity is updated, we calculate the new position.
+      const newX = this.x + (this.velocity.x * dt);
+      const newY = this.y + (this.velocity.y * dt);
+
+      // 3. Now we clamp the position to the game bounds.
+      if (this.gameBounds) {
+          this.x = Math.max(this.gameBounds.left + 25, Math.min(newX, this.gameBounds.right - 25)); // 50 is the width of the player
+          this.y = Math.max(this.gameBounds.top, Math.min(newY, this.gameBounds.bottom)); // 50 is the height of the player
+      } else {
+          this.x = newX;
+          this.y = newY;
+      }
+
+      // 4. Finally, we reset the relevant variables when on the ground
+      if (this.y === this.gameBounds?.bottom) {
+          this.isOnGround = true;
+          this.canDoubleJump = true; // Reset double jump when on ground
+          this.velocity.y = 0; // Reset vertical velocity when on ground
+      }
+
+}
+    
 
   public setIsBystander(value: boolean): void {
     this.isBystander = value;
@@ -239,38 +170,26 @@ export class Player {
   public getState(): PlayerState {
     return {
       id: this.id,
-      x: this.x,
-      y: this.y,
       hp: this.hp,
       isBystander: this.isBystander,
       name: this.name,
-      velocityY: this.velocityY,
-      isOnGround: this.isOnGround
+      velocity: this.velocity,
+      position: new Vector2(this.x, this.y),
+      isOnGround: this.isOnGround,
     };
   }
 
-  public integrateInput(): void {
-    const max = 1;
-    let numIntegrations = 0;
-    //console.log('Integrating input. Queue length:', this.inputQueue.length);
-    while (this.inputQueue.length > 0 && numIntegrations < max) {
-      const input = this.inputQueue.shift();
-      const inputEvent = input?.event
-      console.log(`Integrating input: ${JSON.stringify(inputEvent)}`);
-      if (!inputEvent || !inputEvent.type) return;
-      // Determine event type and handle accordingly
-      if (inputEvent.type === 'keyDown' || inputEvent.type === 'keyUp') {
-        this.handleKeyboardEvent(inputEvent as KeyboardEvent);
-      } // TODO: Handle mouse events similarly
-      numIntegrations++;
-    }
-    //console.log('Integrated input. Remaining queue length:', this.inputQueue.length);
+  public getInputQueueLength(): number {
+    return this.inputQueue.length;
   }
 
-
- 
-  
-
+  public dequeueInput(): InputPayload | undefined {
+    if (this.inputQueue.length === 0) {
+      return undefined;
+    }
+    const input = this.inputQueue.shift();
+    return input;
+  } 
 
 
 }
