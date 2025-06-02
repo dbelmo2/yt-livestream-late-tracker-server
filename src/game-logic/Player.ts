@@ -83,7 +83,7 @@ export class Player {
       // 1. First we update our velocity vector based on input and physics.
       // Horizontal Movement
       if (inputVector.x !== 0) {
-        inputVector.normalize();
+        //inputVector.normalize();
         this.velocity.x = inputVector.x * this.SPEED;
       } else {
         this.velocity.x = 0;
