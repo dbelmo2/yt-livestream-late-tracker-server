@@ -219,14 +219,17 @@ export class Match {
       while (numIntegrations < max) {
         const inputPayload = player.dequeueInput();
         if (!inputPayload) {
+          console.log('no player input found, using default vector (0,0)');
           numIntegrations = max; // No more inputs to process
         }
         player.update(inputPayload?.vector || new Vector2(0,0), dt);
   
         if (inputPayload) {
           player.setLastProcessedInput(inputPayload?.tick);
+          // TODO: This situation is causing the server position to fall behind the client position.
+          // Downstream throttle?
         }
-        console.log(`Player is at position (${player.getX()}, ${player.getY()}) after processing input at tick ${player.getLastProcessedInput() + player.getNumTicksWithoutInput()}`);
+        //console.log(`Player is at position (${player.getX()}, ${player.getY()}) after processing input at tick ${player.getLastProcessedInput() + player.getNumTicksWithoutInput()}`);
 
         numIntegrations++;
       }
