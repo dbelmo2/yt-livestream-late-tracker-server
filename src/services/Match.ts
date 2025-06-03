@@ -219,7 +219,7 @@ export class Match {
       while (numIntegrations < max) {
         const inputPayload = player.dequeueInput();
         if (!inputPayload) {
-          console.log('no player input found, using default vector (0,0)');
+          console.log(`no player input found, using default vector (0,0). Current server tick: ${this.serverTick}`);
           numIntegrations = max; // No more inputs to process
         }
         player.update(inputPayload?.vector || new Vector2(0,0), dt);
