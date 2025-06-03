@@ -71,15 +71,19 @@ export class Player {
     return this.numTicksWithoutInput;
   }
 
-  public update(inputVector: Vector2, dt: number): void {
-     // console.log(`Player ${this.id} update called with inputVector: ${inputVector.x}, ${inputVector.y} and dt: ${dt}`);
+
+  private isJumping = false;
+  private indexPostJump = 0
+
+  update(inputVector: Vector2, dt: number) {
+    
       //const wasOnGround = this.isOnGround;
       if (inputVector.x === 0 && inputVector.y === 0) {
           this.numTicksWithoutInput++;
       } else {
           this.numTicksWithoutInput = 0; // Reset if we have input
       }
-      
+
       // 1. First we update our velocity vector based on input and physics.
       // Horizontal Movement
       if (inputVector.x !== 0) {
@@ -90,10 +94,17 @@ export class Player {
       }
 
       // Jumping
+      
+
+
+      //console.log('inputVector.v < 0', inputVector.y < 0)
+      //console.log('this.canDoubleJump', this.canDoubleJump);
       if ((inputVector.y < 0 && this.isOnGround) || (inputVector.y < 0 && this.canDoubleJump)) {
+        console.log("Jumping");
         this.velocity.y = inputVector.y * this.JUMP_STRENGTH;
         this.canDoubleJump = this.isOnGround;
         this.isOnGround = false;
+        this.isJumping = true; // Set jumping state
       }
 
 
@@ -116,15 +127,52 @@ export class Player {
           this.y = newY;
       }
 
-      // 4. Finally, we reset the relevant variables when on the ground
       if (this.y === this.gameBounds?.bottom) {
           this.isOnGround = true;
           this.canDoubleJump = true; // Reset double jump when on ground
           this.velocity.y = 0; // Reset vertical velocity when on ground
+          this.isJumping = false; // Reset jumping state
+          this.indexPostJump = 0; // Reset post-jump index
       }
 
-}
-    
+      if (this.isJumping && inputVector.y === 0 && inputVector.x === 0) {
+        this.indexPostJump++;
+        console.log(`Player coordinates ${this.indexPostJump} ticks after jump: ${this.x}, ${this.y}`);
+      }
+
+                        
+      /*
+      // Check platform collisions
+      for (const platform of this.platforms) {
+      const platformBounds = platform.getPlatformBounds();
+      const playerBounds = this.getPlayerBounds();
+      
+      // Calculate the previous position based on velocity
+      const prevBottom = playerBounds.bottom - this.velocityY;
+      
+      // Check for platform collision with tunneling prevention
+      const isGoingDown = this.velocityY > 0;
+      const wasAbovePlatform = prevBottom <= platformBounds.top;
+      const isWithinPlatformWidth = playerBounds.right > platformBounds.left && 
+      playerBounds.left < platformBounds.right;
+      const hasCollidedWithPlatform = playerBounds.bottom >= platformBounds.top;
+      
+      // Check if we're falling, were above platform last frame, and are horizontally aligned
+      if (isGoingDown && wasAbovePlatform && isWithinPlatformWidth && hasCollidedWithPlatform) {
+
+          this.y = platformBounds.top;
+          this.velocityY = 0;
+          isOnSurface = true;
+          break;
+      }
+      }
+
+      this.isOnGround = isOnSurface;
+      if (isOnSurface && !wasOnGround) {
+          this.canDoubleJump = true;
+      }
+    */
+  }
 
   public setIsBystander(value: boolean): void {
     this.isBystander = value;
