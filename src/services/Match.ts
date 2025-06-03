@@ -610,7 +610,7 @@ export class Match {
         name,
         position,
         velocity,
-        tick: player.getLastProcessedInput() + player.getNumTicksWithoutInput()
+        tick: player.getLastProcessedInput()
       };
     });
   }

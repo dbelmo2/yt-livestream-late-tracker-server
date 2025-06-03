@@ -76,12 +76,12 @@ export class Player {
   private indexPostJump = 0
 
   update(inputVector: Vector2, dt: number) {
-    
+
       //const wasOnGround = this.isOnGround;
       if (inputVector.x === 0 && inputVector.y === 0) {
-          this.numTicksWithoutInput++;
+          //this.numTicksWithoutInput++;
       } else {
-          this.numTicksWithoutInput = 0; // Reset if we have input
+          //this.numTicksWithoutInput = 0; // Reset if we have input
       }
 
       // 1. First we update our velocity vector based on input and physics.
