@@ -6,11 +6,5 @@ export const config = {
     webhookSecret: process.env.WEBHOOK_SECRET || 'your-secret-key',
     maxRetries: parseInt(process.env.MAX_RETRIES || '5'),
     youtubeChannelId: process.env.YOUTUBE_CHANNEL_ID || 'your-channel-id',
-    regionalQueueTimeout: parseInt(process.env.REGIONAL_QUEUE_TIMEOUT || '20'),
-    maxPlayers: parseInt(process.env.MAX_PLAYERS || '7'),
-    earlyStartMinPlayers: parseInt(process.env.EARLY_START_MIN_PLAYERS || '3'),
-    fallbackMinPlayers: parseInt(process.env.FALLBACK_MIN_PLAYERS || '2'),
-    fallbackStartTimeout: parseInt(process.env.FALLBACK_START_TIMEOUT || '30'),
-    frontEndUrl: process.env.FRONT_END_URL || 'http://localhost:3000',
     nodeEnv: process.env.NODE_ENV || 'development',
 };
