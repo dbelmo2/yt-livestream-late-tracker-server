@@ -44,7 +44,7 @@ server.listen(PORT, () => {
 
 
 (async () => {
-  logger.info('Subscribing to YouTube channel...');
+  logger.info('Subscribing to YouTube channel using base URL:', config.baseUrl);
   await subscribeToChannel(
     config.youtubeChannelId,
     `${config.baseUrl}/api/webhooks/youtube`
