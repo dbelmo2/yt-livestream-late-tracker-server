@@ -3,6 +3,7 @@ import { config } from '../config/env';
 
 // TODO: Review this code
 
+// Initializes the YouTube subscription to a channel for receiving livestream updates/listening for new livestreams.
 export const subscribeToChannel = async (channelId: string, callbackUrl: string): Promise<void> => {
   const hubUrl = 'https://pubsubhubbub.appspot.com/subscribe';
   const topicUrl = `https://www.youtube.com/xml/feeds/videos.xml?channel_id=${channelId}`;

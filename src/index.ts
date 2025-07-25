@@ -1,6 +1,8 @@
 import * as dotenv from 'dotenv';
 dotenv.config();
 
+// Keep this as server for webpage for checking how late a channel has been. This will still handle the database layer and use it to avoid rate limits.
+
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';

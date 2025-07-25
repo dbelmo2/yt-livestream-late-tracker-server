@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import Stats from '../models/stats';
 import logger from '../utils/logger';
+import { formatDuration } from '../utils/time';
 
 export const getStats = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -13,9 +14,12 @@ export const getStats = async (req: Request, res: Response): Promise<void> => {
         return;
       }
       // convert to JSON and remove _id and __v fields
-      const { streamCount, totalLateTime, lastUpdateDate } = stats.toObject();
-      logger.info('Fetched stats from database', { streamCount, totalLateTime, lastUpdateDate });
-      res.json(stats);
+      const statsObject = stats.toObject();
+
+      const humanReadable = formatDuration(statsObject.totalLateTime);
+      logger.info('Fetched stats from database', { streamCount: statsObject.streamCount, totalLateTime: statsObject.totalLateTime, lastUpdateDate: statsObject.lastUpdateDate });
+      logger.info(`Human readable format: ${humanReadable}`);
+      res.json({ humanReadable, ...statsObject });
     } catch (error) {
       throw error instanceof Error ? error : new Error('Unknown error in getStats');
     }

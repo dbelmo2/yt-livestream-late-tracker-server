@@ -6,33 +6,25 @@ export const calculateLateTime = (scheduled: string, actual?: string): number =>
 
 
 
-export const formatSecondsToLargestUnit = (totalSeconds: number): string => {
-    const units = [
-        { label: 'day', seconds: 86400 },
-        { label: 'hour', seconds: 3600 },
-        { label: 'minute', seconds: 60 },
-        { label: 'second', seconds: 1 },
-    ];
+export const formatDuration = (seconds: number): string => {
+  const units = [
+    { label: 'day',   value: 86400 },
+    { label: 'hour',  value: 3600 },
+    { label: 'minute', value: 60 },
+    { label: 'second', value: 1 },
+  ];
 
-    for (const unit of units) {
-        if (totalSeconds >= unit.seconds) {
-            const value = Math.floor(totalSeconds / unit.seconds);
-            return `${value} ${unit.label}${value !== 1 ? 's' : ''}`;
-        }
+  const result = [];
+
+  for (const { label, value } of units) {
+    if (seconds >= value) {
+      const amount = Math.floor(seconds / value);
+      seconds %= value;
+      result.push(`${amount} ${label}${amount !== 1 ? 's' : ''}`);
     }
+  }
 
-    return '0 seconds';
+  return result.length > 0 ? result.join(', ') : '0 seconds';
 };
 
 
-export const formatSecondsToHumanReadable = (totalSeconds: number): string => {
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = Math.floor(totalSeconds % 60);
-  
-    const parts = [];
-    if (minutes > 0) parts.push(`${minutes} minute${minutes !== 1 ? 's' : ''}`);
-    if (seconds > 0 || minutes === 0) parts.push(`${seconds} second${seconds !== 1 ? 's' : ''}`);
-  
-    return parts.join(', ');
-  };
-  

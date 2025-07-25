@@ -3,7 +3,7 @@ import { RateLimitError } from '../utils/errors';
 import logger from '../utils/logger';
 
 export const rateLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
+    windowMs: 1 * 60 * 1000, // 1 minutes
     message: async () => {
         throw new RateLimitError('Too many requests from this IP, please try again after 15 minutes.');
     },

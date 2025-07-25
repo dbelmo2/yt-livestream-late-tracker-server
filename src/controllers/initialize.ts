@@ -4,9 +4,10 @@ import Stats from '../models/stats';
 import { ApiError } from '../utils/errors';
 import logger from '../utils/logger';
 import youtube from '../config/youtube';
-import { calculateLateTime, formatSecondsToHumanReadable } from '../utils/time';
+import { calculateLateTime } from '../utils/time';
 import { config } from '../config/env';
 import { ILivestream } from '../types/livestream';
+import { updateStats } from '../services/scheduler';
 
 
 
@@ -18,12 +19,22 @@ export const gracefulBulkInsert = async (livestreams: ILivestream[]) => {
   } catch (err: any) {
     if (err.code === 11000) {
       logger.warn('Some documents were not inserted due to duplicate keys.');
+
     } else {
       logger.error(`Bulk insert failed: ${err.message}`);
       throw err;
     }
   }
 }
+
+
+
+
+// Also add API for which day of the week has the highest average late time, and how much. This will need an inintialize function (with the hard/recent option),
+// and also a function to process a single livestream, which will be used in the webhook handler.
+
+
+
 
 
 export const handleInitialize = async (req: Request, res: Response): Promise<void> => {
@@ -42,9 +53,22 @@ export const handleInitialize = async (req: Request, res: Response): Promise<voi
 
   let nextPageToken: string | undefined;
   let videoIdSet = new Set<string>();
-  const livestreamDocumnets: ILivestream[] = [];
+  const livestreamDocuments: ILivestream[] = [];
   let streamCount = 0;
   let totalLateTime = 0;
+  let maxLateTime = 0;
+  
+  // Track late time by day of week (0 = Sunday, 1 = Monday, etc.)
+  const dailyStats = {
+    0: { totalTime: 0, count: 0 }, // Sunday
+    1: { totalTime: 0, count: 0 }, // Monday
+    2: { totalTime: 0, count: 0 }, // Tuesday
+    3: { totalTime: 0, count: 0 }, // Wednesday
+    4: { totalTime: 0, count: 0 }, // Thursday
+    5: { totalTime: 0, count: 0 }, // Friday
+    6: { totalTime: 0, count: 0 }, // Saturday
+  };
+
   do {
     videoIdSet.clear();
     logger.info(`Fetching livestreams from uploads playlist`);
@@ -67,8 +91,7 @@ export const handleInitialize = async (req: Request, res: Response): Promise<voi
         }
       }
     }
-    logger.info(`Of the ${response.data.items?.length} video IDs from the playlist, ${videoIdSet.size} are unique`);
-
+    logger.info(`Of the ${response.data.items?.length} video IDs from the playlist (API response), ${videoIdSet.size} are unique`);
 
     // Now that we have a unique set of video IDs, we can fetch their details
     const videoResponse = await youtube.videos.list({
@@ -84,11 +107,23 @@ export const handleInitialize = async (req: Request, res: Response): Promise<voi
     }
 
 
+    // Filter out livestreams that already exist in the database to avoid 
+    // messing up the stats.
+    // Logs showing non empty newLivetreams array when there are no new livestreams can happen
+    // due to the API returning livestreams that are missing data and where therefore never saved to the database.
 
-    for (const broadcast of videoResponse.data.items) {
+
+    const existingLivestreams = await Livestream.find({ videoId: { $in: Array.from(videoIdSet) } });
+    const newLivestreams = videoResponse.data.items.filter(video =>
+      !existingLivestreams.some(existing => existing.videoId === video.id)
+    )
+
+    console.log(`Of the ${videoResponse.data.items.length} videos fetched, ${newLivestreams.length} are new livestreams not in the database`);
+
+    for (const broadcast of newLivestreams) {
       if (!broadcast.id) {
         logger.warn(`Broadcast ID is missing, skipping broadcast with title ${broadcast?.snippet?.title}`);
-        continue
+        continue;
       }
       if (
         broadcast?.liveStreamingDetails?.scheduledStartTime &&
@@ -98,10 +133,21 @@ export const handleInitialize = async (req: Request, res: Response): Promise<voi
           broadcast.liveStreamingDetails.scheduledStartTime,
           broadcast.liveStreamingDetails.actualStartTime
         );
+        
+        // Update total late time
         totalLateTime += lateTime;
-        livestreamDocumnets.push({
+        
+        // Update max late time
+        if (lateTime > maxLateTime) {
+          maxLateTime = lateTime;
+        }
+        
+        // Calculate day of week for scheduled start time
+        const scheduledDate = new Date(Date.parse(broadcast.liveStreamingDetails.scheduledStartTime));
+        
+        livestreamDocuments.push({
           videoId: broadcast.id,
-          scheduledStartTime: new Date(Date.parse(broadcast.liveStreamingDetails.scheduledStartTime)),
+          scheduledStartTime: scheduledDate,
           actualStartTime: new Date(Date.parse(broadcast.liveStreamingDetails.actualStartTime)),
           lateTime,
           title: broadcast?.snippet?.title || 'No title available',
@@ -111,20 +157,22 @@ export const handleInitialize = async (req: Request, res: Response): Promise<voi
       logger.info(`Broadcast with ID ${broadcast.id} does not have scheduled or actual start time, skipping.`);
     }
     nextPageToken = response.data.nextPageToken as string | undefined;
-    logger.info(`${livestreamDocumnets.length} livestream documents built so far... nextPageToken: ${nextPageToken}`);
-  } while(nextPageToken);
-  streamCount = livestreamDocumnets.length;
-  // Once we have all the livestream documents, we can perform a bulk insert
-  // which will gracefully handle duplicates
-  await gracefulBulkInsert(livestreamDocumnets as unknown as ILivestream[]);
+    logger.info(`${livestreamDocuments.length} livestream documents built so far... nextPageToken: ${nextPageToken}`);
+  } while (nextPageToken);
+
+  streamCount = livestreamDocuments.length;
+  
+
+  // Once we have all the livestream documents, perform bulk insert
+  await gracefulBulkInsert(livestreamDocuments as unknown as ILivestream[]);
+  const updatedStats = await updateStats(livestreamDocuments as unknown as ILivestream[]);
       
-  // Update stats
-  await Stats.create({ streamCount, totalLateTime });
-  logger.info(`Initialized with ${streamCount} livestreams, total late time: ${totalLateTime}s or ${formatSecondsToHumanReadable(totalLateTime)}`);
   res.status(200).json({
     message: 'Initialization complete',
-    streamCount,
-    totalLateTime
+    streamCount: updatedStats.streamCount,
+    totalLateTime: updatedStats.totalLateTime,
+    maxLateTime: updatedStats.maxLateTime,
+    daily: updatedStats.daily,
   });
 
-}
+};

@@ -5,14 +5,17 @@ import logger from '../utils/logger';
 import youtube from '../config/youtube';
 import Livestream from '../models/livestream';
 import Stats from '../models/stats';
-import { calculateLateTime } from '../utils/time';
+import { calculateLateTime, formatDuration } from '../utils/time';
 import { FailedLivestream } from '../models/failedLivestreams';
 import { ApiError } from '../utils/errors';
-import { formatSecondsToHumanReadable } from '../utils/time';
+import { ILivestream } from '../types/livestream';
 
 // TODO: Handle duplicate key MongoDB error after a livestream goes live. 
 // These errors should be handled gracefully by simply logging a warning and NOT inserting into the failedLivestreams collection
 // Because the duplicate comes almost immediately after the valid livestream, the check below does not work... 
+
+
+// This function is used to process both failed and new livestreams. 
 export const processLivestream = async (videoId: string): Promise<void> => {
     try {
       logger.debug(`Processing livestream with videoId: ${videoId}`);
@@ -42,9 +45,8 @@ export const processLivestream = async (videoId: string): Promise<void> => {
             return;
           }
           const lateTime = calculateLateTime(scheduledStartTime, actualStartTime);
-          logger.info(`Calculated late time for livestream ${videoId}: ${lateTime}s or ${formatSecondsToHumanReadable(lateTime)}`);
+          logger.info(`Calculated late time for livestream ${videoId}: ${lateTime}s or ${formatDuration(lateTime)}`);
           const title = livestream?.snippet?.title || 'No title available';
-
 
           const livestreamDocument = {
             videoId,
@@ -53,13 +55,11 @@ export const processLivestream = async (videoId: string): Promise<void> => {
             lateTime,
             title,
           };
+          
+          // Save the livestream document
           await Livestream.create(livestreamDocument);
-          await Stats.updateOne(
-            {},
-            { $inc: { totalLateTime: lateTime, streamCount: 1 }, lastUpdateDate: new Date() },  
-            { upsert: true }
-          );
-          logger.info(`Livestream '${title}' saved and stats updated.`);
+          await updateStats([livestreamDocument as unknown as ILivestream]);
+
           // Remove from FailedLivestreams if it exists
           await FailedLivestream.deleteOne({ videoId });
           return;
@@ -90,7 +90,115 @@ export const processLivestream = async (videoId: string): Promise<void> => {
       );
       throw error;
     }
-  };
+};
+
+
+export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<typeof Stats.prototype> => {
+
+  if (liveStreamDocuments.length === 0) {
+    // TODO: Recalculate stats based on existing documents???
+    return
+  }
+
+  let currentStats = await Stats.findOne({});
+
+
+  
+  if (!currentStats) {
+    // Create new stats document if it doesn't exist
+    currentStats = new Stats({
+      streamCount: 0,
+      totalLateTime: 0,
+      averageLateTime: 0,
+      maxLateTime: 0,
+      daily: {
+        sunday: { totalLateTime: 0, count: 0 },
+        monday: { totalLateTime: 0, count: 0 },
+        tuesday: { totalLateTime: 0, count: 0 },
+        wednesday: { totalLateTime: 0, count: 0 },
+        thursday: { totalLateTime: 0, count: 0 },
+        friday: { totalLateTime: 0, count: 0 },
+        saturday: { totalLateTime: 0, count: 0 },
+      },
+    });
+
+    await currentStats.save();
+  }
+
+  const newStreamCount = (currentStats.streamCount) + liveStreamDocuments.length;
+  const newTotalLateTime = (currentStats.totalLateTime) + liveStreamDocuments.reduce((acc, doc) => acc + doc.lateTime, 0);
+  const newAverageLateTime = newTotalLateTime / newStreamCount;
+  const newMaxLateTime = Math.max(currentStats.maxLateTime, ...liveStreamDocuments.map(doc => doc.lateTime));
+
+  const newDailyData = {
+    sunday: { totalLateTime: 0, count: 0 },
+    monday: { totalLateTime: 0, count: 0 },
+    tuesday: { totalLateTime: 0, count: 0 },
+    wednesday: { totalLateTime: 0, count: 0 },
+    thursday: { totalLateTime: 0, count: 0 },
+    friday: { totalLateTime: 0, count: 0 },
+    saturday: { totalLateTime: 0, count: 0 },
+  }
+
+  for (const doc of liveStreamDocuments) {
+    const scheduledDate = new Date(doc.scheduledStartTime);
+    const dayOfWeek = scheduledDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const dayName = dayNames[dayOfWeek];
+
+    newDailyData[dayName as keyof typeof newDailyData].totalLateTime += doc.lateTime;
+    newDailyData[dayName as keyof typeof newDailyData].count += 1;
+  }
+
+
+
+  const updatedStats = await Stats.updateOne(
+    {},
+    {
+      $set: {
+        streamCount: newStreamCount,
+        totalLateTime: newTotalLateTime,
+        averageLateTime: newAverageLateTime,
+        maxLateTime: newMaxLateTime,
+        lastUpdateDate: new Date(),
+        daily: {
+          sunday: {
+            totalLateTime: currentStats.daily.sunday.totalLateTime + newDailyData.sunday.totalLateTime,
+            count: currentStats.daily.sunday.count + newDailyData.sunday.count
+          },
+          monday: {
+            totalLateTime: currentStats.daily.monday.totalLateTime + newDailyData.monday.totalLateTime,
+            count: currentStats.daily.monday.count + newDailyData.monday.count
+          },
+          tuesday: {
+            totalLateTime: currentStats.daily.tuesday.totalLateTime + newDailyData.tuesday.totalLateTime,
+            count: currentStats.daily.tuesday.count + newDailyData.tuesday.count
+          },
+          wednesday: {
+            totalLateTime: currentStats.daily.wednesday.totalLateTime + newDailyData.wednesday.totalLateTime,
+            count: currentStats.daily.wednesday.count + newDailyData.wednesday.count
+          },
+          thursday: {
+            totalLateTime: currentStats.daily.thursday.totalLateTime + newDailyData.thursday.totalLateTime,
+            count: currentStats.daily.thursday.count + newDailyData.thursday.count
+          },
+          friday: {
+            totalLateTime: currentStats.daily.friday.totalLateTime + newDailyData.friday.totalLateTime,
+            count: currentStats.daily.friday.count + newDailyData.friday.count
+          },
+          saturday: {
+            totalLateTime: currentStats.daily.saturday.totalLateTime + newDailyData.saturday.totalLateTime,
+            count: currentStats.daily.saturday.count + newDailyData.saturday.count
+          },
+        }
+      }
+    },
+    { upsert: true, new: true }
+  );
+
+  logger.info(`Updated stats: ${JSON.stringify(updatedStats)}`);
+  return updatedStats;
+}
 
 
 export const setupScheduler = (): void => {
