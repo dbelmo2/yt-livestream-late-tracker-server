@@ -97,7 +97,7 @@ export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<t
 
   if (liveStreamDocuments.length === 0) {
     // TODO: Recalculate stats based on existing documents???
-    return
+    return await generateStats()
   }
 
   let currentStats = await Stats.findOne({});
@@ -110,7 +110,11 @@ export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<t
       streamCount: 0,
       totalLateTime: 0,
       averageLateTime: 0,
-      maxLateTime: 0,
+      max: {
+        videoId: 'temp videoId',
+        lateTime: 0,
+        title: 'temp title',
+      },
       daily: {
         sunday: { totalLateTime: 0, count: 0 },
         monday: { totalLateTime: 0, count: 0 },
@@ -128,7 +132,8 @@ export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<t
   const newStreamCount = (currentStats.streamCount) + liveStreamDocuments.length;
   const newTotalLateTime = (currentStats.totalLateTime) + liveStreamDocuments.reduce((acc, doc) => acc + doc.lateTime, 0);
   const newAverageLateTime = newTotalLateTime / newStreamCount;
-  const newMaxLateTime = Math.max(currentStats.maxLateTime, ...liveStreamDocuments.map(doc => doc.lateTime));
+
+  let mostLateNewDoc;
 
   const newDailyData = {
     sunday: { totalLateTime: 0, count: 0 },
@@ -140,7 +145,11 @@ export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<t
     saturday: { totalLateTime: 0, count: 0 },
   }
 
+  mostLateNewDoc = liveStreamDocuments[0];
+
+  
   for (const doc of liveStreamDocuments) {
+    
     const scheduledDate = new Date(doc.scheduledStartTime);
     const dayOfWeek = scheduledDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
     const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -148,18 +157,35 @@ export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<t
 
     newDailyData[dayName as keyof typeof newDailyData].totalLateTime += doc.lateTime;
     newDailyData[dayName as keyof typeof newDailyData].count += 1;
+
+    if (doc.lateTime > mostLateNewDoc.lateTime) {
+      mostLateNewDoc = doc;
+    }
+  }
+
+
+  const maxUpdateData = {
+    videoId: currentStats.max.videoId,
+    lateTime: currentStats.max.lateTime,
+    title: currentStats.max.title,
+  }
+  if (mostLateNewDoc.lateTime > maxUpdateData.lateTime) {
+    maxUpdateData.lateTime = mostLateNewDoc.lateTime;
+    maxUpdateData.videoId = mostLateNewDoc.videoId;
+    maxUpdateData.title = mostLateNewDoc.title;
   }
 
 
 
-  const updatedStats = await Stats.updateOne(
+
+  await Stats.updateOne(
     {},
     {
       $set: {
         streamCount: newStreamCount,
         totalLateTime: newTotalLateTime,
         averageLateTime: newAverageLateTime,
-        maxLateTime: newMaxLateTime,
+        max: maxUpdateData,
         lastUpdateDate: new Date(),
         daily: {
           sunday: {
@@ -193,11 +219,70 @@ export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<t
         }
       }
     },
-    { upsert: true, new: true }
+    { upsert: true }
   );
 
-  logger.info(`Updated stats: ${JSON.stringify(updatedStats)}`);
-  return updatedStats;
+  return Stats.findOne({}).lean();
+}
+
+
+const generateStats = async (): Promise<typeof Stats.prototype> => {
+    logger.info('Generating stats from existing livestream data');
+    let currentPage = 1;
+    const pageSize = 100;
+    let hasMoreData = true;
+    let allLivestreams: ILivestream[] = [];
+    
+    try {
+      // Paginate through all livestreams
+      while (hasMoreData) {
+        const livestreams = await Livestream.find({})
+          .sort({ scheduledStartTime: 1 })
+          .skip((currentPage - 1) * pageSize)
+          .limit(pageSize)
+          .lean();
+        
+        if (livestreams.length === 0) {
+          hasMoreData = false;
+        } else {
+          // Convert lean objects to ILivestream compatible objects
+          const typedLivestreams = livestreams.map(ls => ({
+            videoId: ls.videoId,
+            title: ls.title || '',
+            lateTime: ls.lateTime || 0,
+            scheduledStartTime: new Date(ls.scheduledStartTime as Date),
+            actualStartTime: new Date(ls.actualStartTime as Date)
+          } as ILivestream));
+          
+          allLivestreams = [...allLivestreams, ...typedLivestreams];
+          currentPage++;
+        }
+      }
+      
+      logger.info(`Found ${allLivestreams.length} livestreams for stats generation`);
+      
+      if (allLivestreams.length === 0) {
+        logger.warn('No livestreams found to generate stats');
+        return;
+      }
+      
+      // Delete existing stats to recreate from scratch
+      await Stats.deleteMany({});
+      
+      // Update stats with all livestreams
+      const updatedStats = await updateStats(allLivestreams);
+
+      logger.info('Successfully regenerated stats from existing livestream data');
+      return updatedStats;
+    } catch (error) {
+      if (error instanceof Error) {
+        logger.error(`Failed to generate stats: ${error.message}`, { error });
+      } else {
+        logger.error('Failed to generate stats: Unknown error', { error });
+      }
+      throw error;
+    }
+  
 }
 
 

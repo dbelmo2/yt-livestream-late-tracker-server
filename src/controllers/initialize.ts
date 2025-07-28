@@ -71,7 +71,6 @@ export const handleInitialize = async (req: Request, res: Response): Promise<voi
 
   do {
     videoIdSet.clear();
-    logger.info(`Fetching livestreams from uploads playlist`);
     const response = await youtube.playlistItems.list({
       part: ['snippet'],
       playlistId: uploadsPlaylistId,
@@ -79,7 +78,6 @@ export const handleInitialize = async (req: Request, res: Response): Promise<voi
       pageToken: nextPageToken,
     });
 
-    logger.info(`Playlist response length: ${response.data.items?.length}`);
     if (response.data.items) {
       for (const item of response.data.items) {
         if (item.snippet?.resourceId?.videoId) {
@@ -91,7 +89,6 @@ export const handleInitialize = async (req: Request, res: Response): Promise<voi
         }
       }
     }
-    logger.info(`Of the ${response.data.items?.length} video IDs from the playlist (API response), ${videoIdSet.size} are unique`);
 
     // Now that we have a unique set of video IDs, we can fetch their details
     const videoResponse = await youtube.videos.list({
@@ -154,7 +151,7 @@ export const handleInitialize = async (req: Request, res: Response): Promise<voi
         });
         continue;
       }
-      logger.info(`Broadcast with ID ${broadcast.id} does not have scheduled or actual start time, skipping.`);
+      logger.debug(`Broadcast with ID ${broadcast.id} and title ${broadcast?.snippet?.title} does not have scheduled or actual start time, skipping.`);
     }
     nextPageToken = response.data.nextPageToken as string | undefined;
     logger.info(`${livestreamDocuments.length} livestream documents built so far... nextPageToken: ${nextPageToken}`);
@@ -166,12 +163,13 @@ export const handleInitialize = async (req: Request, res: Response): Promise<voi
   // Once we have all the livestream documents, perform bulk insert
   await gracefulBulkInsert(livestreamDocuments as unknown as ILivestream[]);
   const updatedStats = await updateStats(livestreamDocuments as unknown as ILivestream[]);
-      
+  console.log(`Updated stats return object: ${JSON.stringify(updatedStats)}`);
   res.status(200).json({
     message: 'Initialization complete',
     streamCount: updatedStats.streamCount,
     totalLateTime: updatedStats.totalLateTime,
-    maxLateTime: updatedStats.maxLateTime,
+    averageLateTime: updatedStats.averageLateTime,
+    max: updatedStats.max,
     daily: updatedStats.daily,
   });
 

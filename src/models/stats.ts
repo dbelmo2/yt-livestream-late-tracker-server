@@ -5,11 +5,26 @@ const dayStatsSchema = new Schema({
   count: { type: Number, required: true, default: 0 },
 }, { _id: false });
 
+
+const maxStatsSchema = new Schema({
+  videoId: { type: String, required: true, unique: true },
+  lateTime: { type: Number, required: true, default: 0 },
+  title: { type: String, required: true, default: '' },
+}, { _id: false });
+
 const Stats = new Schema({
   streamCount: { type: Number, default: 0 },
   totalLateTime: { type: Number, default: 0 },
   averageLateTime: { type: Number, default: 0 },
-  maxLateTime: { type: Number, default: 0 },
+  max: {
+    type: maxStatsSchema,
+    required: true,
+    default: () => ({
+      videoId: 'temp videoId',
+      lateTime: 0,
+      title: 'temp title',
+    }),
+  },
   daily: {
     type: new Schema({
       sunday: { type: dayStatsSchema, required: true, default: () => ({}) },
