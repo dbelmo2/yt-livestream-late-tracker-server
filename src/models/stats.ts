@@ -12,12 +12,27 @@ const maxStatsSchema = new Schema({
   title: { type: String, required: true, default: '' },
 }, { _id: false });
 
+const mostRecent = new Schema({
+  videoId: { type: String, required: true, unique: true },
+  lateTime: { type: Number, required: true, default: 0 },
+  title: { type: String, required: true, default: '' },
+}, { _id: false });
+
 const Stats = new Schema({
   streamCount: { type: Number, default: 0 },
   totalLateTime: { type: Number, default: 0 },
   averageLateTime: { type: Number, default: 0 },
   max: {
     type: maxStatsSchema,
+    required: true,
+    default: () => ({
+      videoId: 'temp videoId',
+      lateTime: 0,
+      title: 'temp title',
+    }),
+  },
+  mostRecent: {
+    type: mostRecent,
     required: true,
     default: () => ({
       videoId: 'temp videoId',

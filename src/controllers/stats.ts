@@ -2,10 +2,15 @@ import { Request, Response } from 'express';
 import Stats from '../models/stats';
 import logger from '../utils/logger';
 import { formatDuration } from '../utils/time';
+import { generateStats } from '../services/scheduler';
 
 export const getStats = async (req: Request, res: Response): Promise<void> => {
     try {
       logger.debug('Fetching stats from database');
+      if (req.query.regen === 'true') {
+        logger.info('Recalculating stats as requested');
+        await generateStats();
+      }
       const stats = await Stats.findOne().catch((err) => {
         throw new Error(`Database query failed: ${err.message}`);
       });

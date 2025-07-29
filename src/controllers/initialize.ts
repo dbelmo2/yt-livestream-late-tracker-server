@@ -13,6 +13,10 @@ import { updateStats } from '../services/scheduler';
 
 export const gracefulBulkInsert = async (livestreams: ILivestream[]) => {
   try {
+    if (livestreams.length === 0) {
+      logger.warn('No livestreams to insert into the database');
+      return;
+    }
     logger.info(`Inserting ${livestreams.length} livestreams into the database`);
     await Livestream.insertMany(livestreams, { ordered: false });
     logger.info(`Successfully inserted ${livestreams.length} livestreams`); 
@@ -157,20 +161,37 @@ export const handleInitialize = async (req: Request, res: Response): Promise<voi
     logger.info(`${livestreamDocuments.length} livestream documents built so far... nextPageToken: ${nextPageToken}`);
   } while (nextPageToken);
 
-  streamCount = livestreamDocuments.length;
   
+  if (livestreamDocuments.length === 0) {
+    logger.warn('No new livestreams found in the uploads playlist');
+  } else {
+    logger.info(`Found ${livestreamDocuments.length} new livestreams to process`);
+    // Once we have all the livestream documents, perform bulk insert
+    await gracefulBulkInsert(livestreamDocuments as unknown as ILivestream[]);
+    await updateStats(livestreamDocuments as unknown as ILivestream[]);
+  }
 
-  // Once we have all the livestream documents, perform bulk insert
-  await gracefulBulkInsert(livestreamDocuments as unknown as ILivestream[]);
-  const updatedStats = await updateStats(livestreamDocuments as unknown as ILivestream[]);
-  console.log(`Updated stats return object: ${JSON.stringify(updatedStats)}`);
-  res.status(200).json({
-    message: 'Initialization complete',
-    streamCount: updatedStats.streamCount,
-    totalLateTime: updatedStats.totalLateTime,
-    averageLateTime: updatedStats.averageLateTime,
-    max: updatedStats.max,
-    daily: updatedStats.daily,
+  const updatedStats = await Stats.findOne({}).lean();
+
+  if (!updatedStats && livestreamDocuments.length === 0) {
+    let errorMessage = 'No livestreams processed and no stats found in the database';
+    logger.error(errorMessage);
+    res.status(500).json({ error: errorMessage });
+  } else if (!updatedStats && livestreamDocuments.length > 0) {
+    let errorMessage = 'New livestreams were processed but no stats found in the database. This is should not happen.';
+    logger.error(errorMessage);
+    res.status(500).json({ error: errorMessage });
+  } else if (updatedStats) {
+    res.status(200).json({
+      message: `Initialization complete. Found ${livestreamDocuments.length} new livestreams and updated stats.`,
+      streamCount: updatedStats.streamCount,
+      totalLateTime: updatedStats.totalLateTime,
+      averageLateTime: updatedStats.averageLateTime,
+      mostRecent: updatedStats.mostRecent,
+      max: updatedStats.max,
+      daily: updatedStats.daily,
   });
+  }
+
 
 };

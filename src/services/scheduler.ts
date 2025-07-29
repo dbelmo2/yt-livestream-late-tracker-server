@@ -93,17 +93,14 @@ export const processLivestream = async (videoId: string): Promise<void> => {
 };
 
 
-export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<typeof Stats.prototype> => {
+export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<void> => {
 
   if (liveStreamDocuments.length === 0) {
-    // TODO: Recalculate stats based on existing documents???
-    return await generateStats()
+    return;
   }
 
   let currentStats = await Stats.findOne({});
 
-
-  
   if (!currentStats) {
     // Create new stats document if it doesn't exist
     currentStats = new Stats({
@@ -111,6 +108,11 @@ export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<t
       totalLateTime: 0,
       averageLateTime: 0,
       max: {
+        videoId: 'temp videoId',
+        lateTime: 0,
+        title: 'temp title',
+      },
+      mostRecent: {
         videoId: 'temp videoId',
         lateTime: 0,
         title: 'temp title',
@@ -146,7 +148,11 @@ export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<t
   }
 
   mostLateNewDoc = liveStreamDocuments[0];
+  // Sort livestreams by actualStartTime (oldest first)
 
+
+  // After sorting, the oldest stream will be at index 0
+  let newestStream = liveStreamDocuments[0];
   
   for (const doc of liveStreamDocuments) {
     
@@ -161,6 +167,10 @@ export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<t
     if (doc.lateTime > mostLateNewDoc.lateTime) {
       mostLateNewDoc = doc;
     }
+
+    if (doc.actualStartTime > newestStream.actualStartTime) {
+      newestStream = doc;
+    }
   }
 
 
@@ -169,6 +179,7 @@ export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<t
     lateTime: currentStats.max.lateTime,
     title: currentStats.max.title,
   }
+
   if (mostLateNewDoc.lateTime > maxUpdateData.lateTime) {
     maxUpdateData.lateTime = mostLateNewDoc.lateTime;
     maxUpdateData.videoId = mostLateNewDoc.videoId;
@@ -176,7 +187,17 @@ export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<t
   }
 
 
+  const mostRecentUpdateData = {
+    videoId: currentStats.mostRecent.videoId,
+    lateTime: currentStats.mostRecent.lateTime,
+    title: currentStats.mostRecent.title,
+  }
 
+  if (newestStream.lateTime > mostRecentUpdateData.lateTime) {
+    mostRecentUpdateData.lateTime = newestStream.lateTime;
+    mostRecentUpdateData.videoId = newestStream.videoId;
+    mostRecentUpdateData.title = newestStream.title;
+  }
 
   await Stats.updateOne(
     {},
@@ -186,6 +207,7 @@ export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<t
         totalLateTime: newTotalLateTime,
         averageLateTime: newAverageLateTime,
         max: maxUpdateData,
+        mostRecent: mostRecentUpdateData,
         lastUpdateDate: new Date(),
         daily: {
           sunday: {
@@ -222,17 +244,15 @@ export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<t
     { upsert: true }
   );
 
-  return Stats.findOne({}).lean();
 }
 
 
-const generateStats = async (): Promise<typeof Stats.prototype> => {
+export const generateStats = async (): Promise<typeof Stats.prototype> => {
     logger.info('Generating stats from existing livestream data');
     let currentPage = 1;
     const pageSize = 100;
     let hasMoreData = true;
     let allLivestreams: ILivestream[] = [];
-    
     try {
       // Paginate through all livestreams
       while (hasMoreData) {
@@ -270,10 +290,8 @@ const generateStats = async (): Promise<typeof Stats.prototype> => {
       await Stats.deleteMany({});
       
       // Update stats with all livestreams
-      const updatedStats = await updateStats(allLivestreams);
-
+      await updateStats(allLivestreams);
       logger.info('Successfully regenerated stats from existing livestream data');
-      return updatedStats;
     } catch (error) {
       if (error instanceof Error) {
         logger.error(`Failed to generate stats: ${error.message}`, { error });
