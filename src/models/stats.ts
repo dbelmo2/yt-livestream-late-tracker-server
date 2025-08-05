@@ -16,6 +16,8 @@ const mostRecent = new Schema({
   videoId: { type: String, required: true, unique: true },
   lateTime: { type: Number, required: true, default: 0 },
   title: { type: String, required: true, default: '' },
+  actualStartTime: { type: Date, required: true },
+  scheduledStartTime: { type: Date, required: true },
 }, { _id: false });
 
 const Stats = new Schema({
@@ -38,6 +40,8 @@ const Stats = new Schema({
       videoId: 'temp videoId',
       lateTime: 0,
       title: 'temp title',
+      actualStartTime: new Date(0),
+      scheduledStartTime: new Date(0),
     }),
   },
   daily: {

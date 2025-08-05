@@ -41,7 +41,6 @@ export const processLivestream = async (videoId: string): Promise<void> => {
           const { scheduledStartTime, actualStartTime } = livestream.liveStreamingDetails || {};
           if (!scheduledStartTime || !actualStartTime) {
             logger.warn(`Missing start times for livestream ${videoId}. Skipping.`);
-            await FailedLivestream.deleteOne({ videoId });
             return;
           }
           const lateTime = calculateLateTime(scheduledStartTime, actualStartTime);
@@ -94,28 +93,37 @@ export const processLivestream = async (videoId: string): Promise<void> => {
 
 
 export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<void> => {
+  logger.info(`Starting updateStats with ${liveStreamDocuments.length} livestream documents`);
 
   if (liveStreamDocuments.length === 0) {
+    logger.info('No livestream documents to process, returning early');
     return;
   }
 
   let currentStats = await Stats.findOne({});
+  logger.info(`Current stats found: ${currentStats ? 'Yes' : 'No'}`);
 
   if (!currentStats) {
+    logger.info('No existing stats found, creating new stats document');
     // Create new stats document if it doesn't exist
+    // Use the first livestream as initial values
+    const firstLivestream = liveStreamDocuments[0];
+    logger.info(`Initializing stats with first livestream: ${firstLivestream.title} (${firstLivestream.videoId})`);
     currentStats = new Stats({
       streamCount: 0,
       totalLateTime: 0,
       averageLateTime: 0,
       max: {
-        videoId: 'temp videoId',
-        lateTime: 0,
-        title: 'temp title',
+        videoId: firstLivestream.videoId,
+        lateTime: firstLivestream.lateTime,
+        title: firstLivestream.title,
       },
       mostRecent: {
-        videoId: 'temp videoId',
-        lateTime: 0,
-        title: 'temp title',
+        videoId: firstLivestream.videoId,
+        lateTime: firstLivestream.lateTime,
+        title: firstLivestream.title,
+        actualStartTime: firstLivestream.actualStartTime,
+        scheduledStartTime: firstLivestream.scheduledStartTime,
       },
       daily: {
         sunday: { totalLateTime: 0, count: 0 },
@@ -129,13 +137,17 @@ export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<v
     });
 
     await currentStats.save();
+    logger.info('New stats document created and saved successfully');
   }
 
   const newStreamCount = (currentStats.streamCount) + liveStreamDocuments.length;
   const newTotalLateTime = (currentStats.totalLateTime) + liveStreamDocuments.reduce((acc, doc) => acc + doc.lateTime, 0);
   const newAverageLateTime = newTotalLateTime / newStreamCount;
 
-  let mostLateNewDoc;
+  logger.info(`Stats calculation: streamCount ${currentStats.streamCount} -> ${newStreamCount}`);
+  logger.info(`Stats calculation: totalLateTime ${currentStats.totalLateTime} -> ${newTotalLateTime}`);
+  logger.info(`Stats calculation: averageLateTime ${currentStats.averageLateTime} -> ${newAverageLateTime}`);
+
 
   const newDailyData = {
     sunday: { totalLateTime: 0, count: 0 },
@@ -147,14 +159,14 @@ export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<v
     saturday: { totalLateTime: 0, count: 0 },
   }
 
-  mostLateNewDoc = liveStreamDocuments[0];
-  // Sort livestreams by actualStartTime (oldest first)
-
-
-  // After sorting, the oldest stream will be at index 0
+  // Initialize with index 0 (this is updated in the loop with correct values)
+  let mostLateNewDoc = liveStreamDocuments[0];
   let newestStream = liveStreamDocuments[0];
   
+  logger.info(`Processing ${liveStreamDocuments.length} livestreams for daily stats and finding most late/newest`);
+  
   for (const doc of liveStreamDocuments) {
+    logger.debug(`Processing livestream: ${doc.title} (${doc.videoId}) - Late time: ${doc.lateTime}s, Actual start: ${doc.actualStartTime.toISOString()}`);
     
     const scheduledDate = new Date(doc.scheduledStartTime);
     const dayOfWeek = scheduledDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
@@ -165,13 +177,18 @@ export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<v
     newDailyData[dayName as keyof typeof newDailyData].count += 1;
 
     if (doc.lateTime > mostLateNewDoc.lateTime) {
+      logger.debug(`Found new most late stream: ${doc.title} (${doc.lateTime}s) replacing ${mostLateNewDoc.title} (${mostLateNewDoc.lateTime}s)`);
       mostLateNewDoc = doc;
     }
 
     if (doc.actualStartTime > newestStream.actualStartTime) {
+      logger.debug(`Found newer stream: ${doc.title} (${doc.actualStartTime.toISOString()}) replacing ${newestStream.title} (${newestStream.actualStartTime.toISOString()})`);
       newestStream = doc;
     }
   }
+
+  logger.info(`Most late new document: ${mostLateNewDoc.title} (${mostLateNewDoc.lateTime}s)`);
+  logger.info(`Newest stream: ${newestStream.title} (${newestStream.actualStartTime.toISOString()})`);
 
 
   const maxUpdateData = {
@@ -181,9 +198,12 @@ export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<v
   }
 
   if (mostLateNewDoc.lateTime > maxUpdateData.lateTime) {
+    logger.info(`Updating max from ${maxUpdateData.title} (${maxUpdateData.lateTime}s) to ${mostLateNewDoc.title} (${mostLateNewDoc.lateTime}s)`);
     maxUpdateData.lateTime = mostLateNewDoc.lateTime;
     maxUpdateData.videoId = mostLateNewDoc.videoId;
     maxUpdateData.title = mostLateNewDoc.title;
+  } else {
+    logger.info(`Keeping current max: ${maxUpdateData.title} (${maxUpdateData.lateTime}s) - no new higher late time found`);
   }
 
 
@@ -191,13 +211,38 @@ export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<v
     videoId: currentStats.mostRecent.videoId,
     lateTime: currentStats.mostRecent.lateTime,
     title: currentStats.mostRecent.title,
+    actualStartTime: currentStats.mostRecent.actualStartTime,
+    scheduledStartTime: currentStats.mostRecent.scheduledStartTime,
   }
 
-  if (newestStream.lateTime > mostRecentUpdateData.lateTime) {
+  // Find the most recent stream from the database to compare with new streams
+  const currentMostRecent = await Livestream.findOne({ videoId: currentStats.mostRecent.videoId });
+  const currentMostRecentDate = currentMostRecent?.actualStartTime || new Date(0);
+
+  logger.info(`Current mostRecent: ${currentStats.mostRecent.title} (${currentMostRecentDate.toISOString()})`);
+  logger.info(`Newest incoming stream: ${newestStream.title} (${newestStream.actualStartTime.toISOString()})`);
+
+  // Always update mostRecent to the newest stream by actualStartTime, regardless of late time
+  if (newestStream.actualStartTime > currentMostRecentDate) {
+    logger.info(`Updating mostRecent from ${currentStats.mostRecent.title} to ${newestStream.title}`);
     mostRecentUpdateData.lateTime = newestStream.lateTime;
     mostRecentUpdateData.videoId = newestStream.videoId;
     mostRecentUpdateData.title = newestStream.title;
+    mostRecentUpdateData.actualStartTime = newestStream.actualStartTime;
+    mostRecentUpdateData.scheduledStartTime = newestStream.scheduledStartTime;
+  } else {
+    logger.info(`Keeping current mostRecent: ${currentStats.mostRecent.title} (newer than incoming streams)`);
   }
+
+  // Log daily stats updates
+  const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  dayNames.forEach(day => {
+    if (newDailyData[day as keyof typeof newDailyData].count > 0) {
+      logger.info(`Daily stats for ${day}: adding ${newDailyData[day as keyof typeof newDailyData].count} streams with ${newDailyData[day as keyof typeof newDailyData].totalLateTime}s total late time`);
+    }
+  });
+
+  logger.info('Saving updated stats to database...');
 
   await Stats.updateOne(
     {},
@@ -244,6 +289,7 @@ export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<v
     { upsert: true }
   );
 
+  logger.info(`Stats update completed successfully. Final counts - streams: ${newStreamCount}, total late time: ${newTotalLateTime}s, average: ${newAverageLateTime.toFixed(2)}s`);
 }
 
 
