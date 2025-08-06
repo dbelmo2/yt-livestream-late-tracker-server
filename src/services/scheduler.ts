@@ -54,8 +54,6 @@ export const processLivestream = async (videoId: string): Promise<void> => {
             lateTime,
             title,
           };
-          
-          // Save the livestream document
           await Livestream.create(livestreamDocument);
           await updateStats([livestreamDocument as unknown as ILivestream]);
 
@@ -182,13 +180,13 @@ export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<v
     }
 
     if (doc.actualStartTime > newestStream.actualStartTime) {
-      logger.debug(`Found newer stream: ${doc.title} (${doc.actualStartTime.toISOString()}) replacing ${newestStream.title} (${newestStream.actualStartTime.toISOString()})`);
+      logger.debug(`Found newer stream: ${doc.title} (${doc.actualStartTime}) replacing ${newestStream.title} (${newestStream.actualStartTime})`);
       newestStream = doc;
     }
   }
 
   logger.info(`Most late new document: ${mostLateNewDoc.title} (${mostLateNewDoc.lateTime}s)`);
-  logger.info(`Newest stream: ${newestStream.title} (${newestStream.actualStartTime.toISOString()})`);
+  logger.info(`Newest stream: ${newestStream.title} (${newestStream.actualStartTime})`);
 
 
   const maxUpdateData = {
@@ -217,13 +215,13 @@ export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<v
 
   // Find the most recent stream from the database to compare with new streams
   const currentMostRecent = await Livestream.findOne({ videoId: currentStats.mostRecent.videoId });
-  const currentMostRecentDate = currentMostRecent?.actualStartTime || new Date(0);
+  const currentMostRecentDate = new Date(currentMostRecent?.actualStartTime || 0);
 
-  logger.info(`Current mostRecent: ${currentStats.mostRecent.title} (${currentMostRecentDate.toISOString()})`);
-  logger.info(`Newest incoming stream: ${newestStream.title} (${newestStream.actualStartTime.toISOString()})`);
+  logger.info(`Current mostRecent: ${currentStats.mostRecent.title} (${currentMostRecentDate})`);
+  logger.info(`Newest incoming stream: ${newestStream.title} (${newestStream.actualStartTime})`);
 
   // Always update mostRecent to the newest stream by actualStartTime, regardless of late time
-  if (newestStream.actualStartTime > currentMostRecentDate) {
+  if (new Date(newestStream.actualStartTime) > currentMostRecentDate) {
     logger.info(`Updating mostRecent from ${currentStats.mostRecent.title} to ${newestStream.title}`);
     mostRecentUpdateData.lateTime = newestStream.lateTime;
     mostRecentUpdateData.videoId = newestStream.videoId;
