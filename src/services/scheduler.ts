@@ -166,7 +166,7 @@ export const updateStats = async (liveStreamDocuments: ILivestream[]): Promise<v
   logger.info(`Processing ${liveStreamDocuments.length} livestreams for daily stats and finding most late/newest`);
   
   for (const doc of liveStreamDocuments) {
-    logger.debug(`Processing livestream: ${doc.title} (${doc.videoId}) - Late time: ${doc.lateTime}s, Actual start: ${doc.actualStartTime.toISOString()}`);
+    logger.info(`Update states. Processing livestream: ${JSON.stringify(doc)}`);
     
     const scheduledDate = new Date(doc.scheduledStartTime);
     const dayOfWeek = scheduledDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
