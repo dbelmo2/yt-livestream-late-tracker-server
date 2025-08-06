@@ -18,14 +18,15 @@ import { ILivestream } from '../types/livestream';
 // This function is used to process both failed and new livestreams. 
 export const processLivestream = async (videoId: string): Promise<void> => {
     try {
-      logger.debug(`Processing livestream with videoId: ${videoId}`);
+      logger.info(`Processing livestream with videoId: ${videoId}`);
       const response = await youtube.videos.list({
         part: ['snippet,liveStreamingDetails'],
         id: [videoId],
       });
       const livestream = response?.data?.items?.[0] ?? null;
+      const title = livestream?.snippet?.title || 'Unknown title';
 
-      logger.debug(`Livestream data: ${JSON.stringify(livestream)}`);
+      logger.info(`Livestream data: ${JSON.stringify(livestream)}`);
 
       if (livestream) {
         const existing = await Livestream.findOne({ videoId });
@@ -40,12 +41,11 @@ export const processLivestream = async (videoId: string): Promise<void> => {
         } else if (livestream?.snippet?.liveBroadcastContent !== 'none') {
           const { scheduledStartTime, actualStartTime } = livestream.liveStreamingDetails || {};
           if (!scheduledStartTime || !actualStartTime) {
-            logger.warn(`Missing start times for livestream ${videoId}. Skipping.`);
+            logger.warn(`Missing start times for livestream ${videoId} (${title}). Skipping.`);
             return;
           }
           const lateTime = calculateLateTime(scheduledStartTime, actualStartTime);
-          logger.info(`Calculated late time for livestream ${videoId}: ${lateTime}s or ${formatDuration(lateTime)}`);
-          const title = livestream?.snippet?.title || 'No title available';
+          logger.info(`Calculated late time for livestream ${videoId} (${title}): ${lateTime}s or ${formatDuration(lateTime)}`);
 
           const livestreamDocument = {
             videoId,
