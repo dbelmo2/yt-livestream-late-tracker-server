@@ -9,18 +9,24 @@ import { calculateLateTime, formatDuration } from '../utils/time';
 import { FailedLivestream } from '../models/failedLivestreams';
 import { ApiError } from '../utils/errors';
 import { ILivestream } from '../types/livestream';
+import dayjs from 'dayjs';
+
+const MIN_RETRY_WAIT_HOURS = 3; // Minimum wait time before retrying a failed livestream
 
 // TODO: Handle duplicate key MongoDB error after a livestream goes live. 
 // These errors should be handled gracefully by simply logging a warning and NOT inserting into the failedLivestreams collection
 // Because the duplicate comes almost immediately after the valid livestream, the check below does not work... 
 
+// TODO: In an attempt to catch member streams, insert initial livestreams without a schedule date into failedLivestreams
+// Set some sort of min time before retrying, and then retry by taking videoID and calling the youtube API to get the full
+// details. If the liveestream document already exists, update it with the new title and late time.
 
 // This function is used to process both failed and new livestreams. 
 export const processLivestream = async (videoId: string): Promise<void> => {
     try {
       logger.info(`Processing livestream with videoId: ${videoId}`);
       const response = await youtube.videos.list({
-        part: ['snippet,liveStreamingDetails'],
+        part: ['snippet,liveStreamingDetails,status'],
         id: [videoId],
       });
       const livestream = response?.data?.items?.[0] ?? null;
@@ -41,7 +47,14 @@ export const processLivestream = async (videoId: string): Promise<void> => {
         } else if (livestream?.snippet?.liveBroadcastContent !== 'none') {
           const { scheduledStartTime, actualStartTime } = livestream.liveStreamingDetails || {};
           if (!scheduledStartTime || !actualStartTime) {
-            logger.warn(`Missing start times for livestream ${videoId} (${title}). Skipping.`);
+            logger.warn(`Missing start times for livestream ${videoId} (${title}). Adding to FailedLivestreams.`);
+            await FailedLivestream.create({
+              videoId,  
+              errorMessage: 'Missing scheduled or actual start time',
+              retryCount: 0,
+              lastAttempt: new Date(),
+              createdAt: new Date(),
+            });
             return;
           }
           const lateTime = calculateLateTime(scheduledStartTime, actualStartTime);
@@ -59,6 +72,7 @@ export const processLivestream = async (videoId: string): Promise<void> => {
 
           // Remove from FailedLivestreams if it exists
           await FailedLivestream.deleteOne({ videoId });
+          logger.info(`Successfully processed livestream ${videoId} (${title}), removed from failed collection if it existed`);
           return;
         }
       } else {
@@ -358,14 +372,30 @@ export const setupScheduler = (): void => {
   // Retry failed livestreams (every hour)
   cron.schedule('0 * * * *', async () => {
     try {
-      const failed = await FailedLivestream.find({ retryCount: { $lt: config.maxRetries } }).limit(10); // Max 5 retries, process 10 at a time
+      
+      const failed = await FailedLivestream.find({ 
+        retryCount: { $lt: config.maxRetries }, 
+        createdAt: { $lte: dayjs().subtract(MIN_RETRY_WAIT_HOURS, 'hour').toDate() } // Only retry failed livestreams created at least MIN_RETRY_WAIT_HOURS ago
+      }).limit(10); // Max 5 retries, process 10 at a time
+
+      logger.info(`Found ${failed.length} failed livestreams eligible for retry (older than ${MIN_RETRY_WAIT_HOURS} hours)`);
+
       for (const entry of failed) {
         try {
+          // Check if livestream already exists (scenario 1 happened)
+          const existingLivestream = await Livestream.findOne({ videoId: entry.videoId });
+          if (existingLivestream) {
+            logger.info(`Livestream ${entry.videoId} already exists in collection. Removing from failed collection.`);
+            await FailedLivestream.deleteOne({ videoId: entry.videoId });
+            continue;
+          }
+          
+          logger.info(`Retrying failed livestream ${entry.videoId} (attempt ${entry.retryCount + 1}/${config.maxRetries})`);
           await processLivestream(entry.videoId);
         } catch (error) {
           // Error already logged and updated in processLivestream
           if (entry.retryCount + 1 >= config.maxRetries) {
-            logger.warn(`Max retries reached for livestream ${entry.videoId}`);
+            logger.warn(`Max retries reached for livestream ${entry.videoId}. Giving up.`);
           }
         }
       }
