@@ -7,4 +7,5 @@ export const config = {
     maxRetries: parseInt(process.env.MAX_RETRIES || '5'),
     youtubeChannelId: process.env.YOUTUBE_CHANNEL_ID || 'your-channel-id',
     nodeEnv: process.env.NODE_ENV || 'development',
+    gameServerUrl: process.env.GAME_SERVER_URL || 'http://localhost:4000',
 };

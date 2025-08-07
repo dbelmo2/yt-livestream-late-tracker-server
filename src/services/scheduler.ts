@@ -10,6 +10,7 @@ import { FailedLivestream } from '../models/failedLivestreams';
 import { ApiError } from '../utils/errors';
 import { ILivestream } from '../types/livestream';
 import dayjs from 'dayjs';
+import { informGameShowIsLive } from './game';
 
 const MIN_RETRY_WAIT_HOURS = 3; // Minimum wait time before retrying a failed livestream
 
@@ -22,7 +23,7 @@ const MIN_RETRY_WAIT_HOURS = 3; // Minimum wait time before retrying a failed li
 // details. If the liveestream document already exists, update it with the new title and late time.
 
 // This function is used to process both failed and new livestreams. 
-export const processLivestream = async (videoId: string): Promise<void> => {
+export const processLivestream = async (videoId: string, isFromWebhook = false): Promise<void> => {
     try {
       logger.info(`Processing livestream with videoId: ${videoId}`);
       const response = await youtube.videos.list({
@@ -31,7 +32,9 @@ export const processLivestream = async (videoId: string): Promise<void> => {
       });
       const livestream = response?.data?.items?.[0] ?? null;
       const title = livestream?.snippet?.title || 'Unknown title';
-
+      if (isFromWebhook) {
+        await informGameShowIsLive(videoId, title);
+      }
       logger.info(`Livestream data: ${JSON.stringify(livestream)}`);
 
       if (livestream) {
