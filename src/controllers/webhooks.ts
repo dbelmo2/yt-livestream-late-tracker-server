@@ -76,6 +76,7 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
       const entry = result.feed.entry?.[0];
       if (entry) {
         const videoId = entry['yt:videoId']?.[0];
+        logger.info(`calling processLivestream with videoid '${videoId}' from webhook`);
         await processLivestream(videoId, true);
       }
     } catch (error) {

@@ -23,6 +23,21 @@ const MIN_RETRY_WAIT_HOURS = 3; // Minimum wait time before retrying a failed li
 // details. If the liveestream document already exists, update it with the new title and late time.
 
 // This function is used to process both failed and new livestreams. 
+
+
+
+// TODO: Fix scenario from happening:
+// Members stream was scheduled earlier in day, and the failedLivestream was inserted into collection as no start time was found...
+// Then, it seems the title was changed multiple times, retriggering the webhook no actual start time. at this point, 
+// it errored out because a failed livestream doc already existed in the collection. This happened several times, each time also
+// informing the game server that the livestream had started when it had not (might be fixed now). 
+// It seems when the livestream finally did start, it was succesffully picked up by the webhook and processed.
+// Meaning, member streams are picked up so long as the webhook is active and listening, but they are not returned by the
+// uploads playlist... 
+// Another thing to note... When i first visitied the game while the show was presumebly live, the live screen was immediatly shown..
+// This shouldnt happen unless the livestream went live that moment... Could that mean that the matchmaker is not cleaning up properly?
+// Look into matchmaker cleanup.
+// Does having a window open in the main screen cause this to happen even hours later?
 export const processLivestream = async (videoId: string, isFromWebhook = false): Promise<void> => {
     try {
       logger.info(`Processing livestream with videoId: ${videoId}`);
@@ -33,7 +48,11 @@ export const processLivestream = async (videoId: string, isFromWebhook = false):
       const livestream = response?.data?.items?.[0] ?? null;
       const title = livestream?.snippet?.title || 'Unknown title';
       if (isFromWebhook) {
-        await informGameShowIsLive(videoId, title);
+        // TODO: Move this to only happen if we have actual start time
+        const actualStartTime = livestream?.liveStreamingDetails?.actualStartTime;
+        if (actualStartTime) {
+          await informGameShowIsLive(videoId, title);
+        }
       }
       logger.info(`Livestream data: ${JSON.stringify(livestream)}`);
 
@@ -50,7 +69,12 @@ export const processLivestream = async (videoId: string, isFromWebhook = false):
         } else if (livestream?.snippet?.liveBroadcastContent !== 'none') {
           const { scheduledStartTime, actualStartTime } = livestream.liveStreamingDetails || {};
           if (!scheduledStartTime || !actualStartTime) {
-            logger.warn(`Missing start times for livestream ${videoId} (${title}). Adding to FailedLivestreams.`);
+            logger.warn(`Missing start times for livestream ${videoId} (${title}). Checking if already present in FailedLivestreams...`);
+            const existingFailed = await FailedLivestream.findOne({ videoId });
+            if (existingFailed) {
+              logger.info(`Livestream ${videoId} found in FailedLivestreams, not adding again. (This was likely caused by a change to the livestream while in scheduled status)`);
+              return;
+            }
             await FailedLivestream.create({
               videoId,  
               errorMessage: 'Missing scheduled or actual start time',
