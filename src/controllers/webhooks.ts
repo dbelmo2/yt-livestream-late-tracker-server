@@ -37,7 +37,8 @@ const verifySignature = (req: Request) => {
 
 
 
-
+// NOTE: !!! Member streams are picked up so long as the webhook is active and listening, but they are not returned by the
+// uploads playlist... !!!
 export const handleWebhook = async (req: Request, res: Response): Promise<void> => {
   if (req.method === 'GET') {
     const challenge = req.query['hub.challenge'] as string;

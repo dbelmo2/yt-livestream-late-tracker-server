@@ -3,6 +3,9 @@ import logger from "../utils/logger";
 import { Request, Response } from "express";
 
 
+
+
+
 export const informGameShowIsLive = async (videoId: string, title: string) => {
     try {
         const response = await fetch(`${config.gameServerUrl}/api/live`, {

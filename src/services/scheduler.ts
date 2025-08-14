@@ -14,30 +14,9 @@ import { informGameShowIsLive } from './game';
 
 const MIN_RETRY_WAIT_HOURS = 3; // Minimum wait time before retrying a failed livestream
 
-// TODO: Handle duplicate key MongoDB error after a livestream goes live. 
-// These errors should be handled gracefully by simply logging a warning and NOT inserting into the failedLivestreams collection
-// Because the duplicate comes almost immediately after the valid livestream, the check below does not work... 
-
-// TODO: In an attempt to catch member streams, insert initial livestreams without a schedule date into failedLivestreams
-// Set some sort of min time before retrying, and then retry by taking videoID and calling the youtube API to get the full
-// details. If the liveestream document already exists, update it with the new title and late time.
-
-// This function is used to process both failed and new livestreams. 
-
-
-
 // TODO: Fix scenario from happening:
-// Members stream was scheduled earlier in day, and the failedLivestream was inserted into collection as no start time was found...
-// Then, it seems the title was changed multiple times, retriggering the webhook no actual start time. at this point, 
-// it errored out because a failed livestream doc already existed in the collection. This happened several times, each time also
-// informing the game server that the livestream had started when it had not (might be fixed now). 
-// It seems when the livestream finally did start, it was succesffully picked up by the webhook and processed.
-// Meaning, member streams are picked up so long as the webhook is active and listening, but they are not returned by the
-// uploads playlist... 
-// Another thing to note... When i first visitied the game while the show was presumebly live, the live screen was immediatly shown..
-// This shouldnt happen unless the livestream went live that moment... Could that mean that the matchmaker is not cleaning up properly?
-// Look into matchmaker cleanup.
-// Does having a window open in the main screen cause this to happen even hours later?
+// Fix situation where the livestream from webhook was successfully processed,
+// but the hook then gets triggered again "title change"? This seems to have happened and thrown a duplicate key error. 
 export const processLivestream = async (videoId: string, isFromWebhook = false): Promise<void> => {
     try {
       logger.info(`Processing livestream with videoId: ${videoId}`);
