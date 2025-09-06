@@ -33,13 +33,7 @@ export const processLivestream = async (videoId: string, isFromWebhook = false):
         return;
       }
       const title = livestream?.snippet?.title || 'Unknown title';
-      if (isFromWebhook) {
-        // TODO: Move this to only happen if we have actual start time
-        const actualStartTime = livestream?.liveStreamingDetails?.actualStartTime;
-        if (actualStartTime) {
-          await informGameShowIsLive(videoId, title);
-        }
-      }
+
 
       if (livestream) {
         const existing = await Livestream.findOne({ videoId });
@@ -69,6 +63,17 @@ export const processLivestream = async (videoId: string, isFromWebhook = false):
             });
             return;
           }
+
+
+          if (isFromWebhook) {
+            // TODO: Move this to only happen if we have actual start time
+            const actualStartTime = livestream?.liveStreamingDetails?.actualStartTime;
+            if (actualStartTime) {
+              await informGameShowIsLive(videoId, title);
+            }
+          }
+
+
           const lateTime = calculateLateTime(scheduledStartTime, actualStartTime);
           logger.info(`Calculated late time for livestream ${videoId} (${title}): ${lateTime}s or ${formatDuration(lateTime)}`);
 
