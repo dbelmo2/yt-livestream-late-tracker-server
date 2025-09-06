@@ -25,7 +25,7 @@ export const processLivestream = async (videoId: string, isFromWebhook = false):
         id: [videoId],
       });
 
-      logger.debug(`Response from list API for videoId ${videoId}: ${JSON.stringify(response?.data, null, 2)}`);
+      logger.info(`Response from list API for videoId ${videoId}: ${JSON.stringify(response?.data, null, 2)}`);
 
       const livestream = response?.data?.items?.[0] ?? null;
       const title = livestream?.snippet?.title || 'Unknown title';
