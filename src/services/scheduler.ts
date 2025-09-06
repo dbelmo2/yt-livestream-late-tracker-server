@@ -28,6 +28,12 @@ export const processLivestream = async (videoId: string, isFromWebhook = false):
       logger.info(`Response from list API for videoId ${videoId}: ${JSON.stringify(response?.data)}`);
 
       const livestream = response?.data?.items?.[0] ?? null;
+
+
+      if (livestream?.status?.uploadStatus === 'processed') {
+        logger.warn(`Livestream ${videoId} has uploadStatus 'processed'. This is likely a video premiere. Skipping processing.`);
+        return;
+      }
       const title = livestream?.snippet?.title || 'Unknown title';
       if (isFromWebhook) {
         // TODO: Move this to only happen if we have actual start time
