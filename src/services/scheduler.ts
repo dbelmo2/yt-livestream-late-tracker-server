@@ -25,10 +25,8 @@ export const processLivestream = async (videoId: string, isFromWebhook = false):
         id: [videoId],
       });
 
-      logger.info(`Response from list API for videoId ${videoId}: ${JSON.stringify(response?.data)}`);
-
       const livestream = response?.data?.items?.[0] ?? null;
-
+      logger.info(`Livestream data from video list API: ${JSON.stringify(livestream)}`);
 
       if (livestream?.status?.uploadStatus === 'processed') {
         logger.warn(`Livestream ${videoId} has uploadStatus 'processed'. This is likely a video premiere. Skipping processing.`);
@@ -42,7 +40,6 @@ export const processLivestream = async (videoId: string, isFromWebhook = false):
           await informGameShowIsLive(videoId, title);
         }
       }
-      logger.info(`Livestream data: ${JSON.stringify(livestream)}`);
 
       if (livestream) {
         const existing = await Livestream.findOne({ videoId });
