@@ -31,14 +31,70 @@ export const gracefulBulkInsert = async (livestreams: ILivestream[]) => {
   }
 }
 
+const processVideoIds = async (videoIdSet: Set<string>  ) => {
+
+    const livestreamDocuments: ILivestream[] = [];
+    const videoResponse = await youtube.videos.list({
+      part: ['snippet', 'liveStreamingDetails'],
+      id: Array.from(videoIdSet),
+    });
+    
+    logger.info(`Fetched livestream details for ${videoResponse.data.items?.length} videos`);
+
+    if (!videoResponse.data.items || videoResponse.data.items.length === 0) {
+      logger.warn(`No livestream data found in the video.list API for current page`);
+      return [];
+    }
 
 
+    // Filter out livestreams that already exist in the database to avoid 
+    // messing up the stats.
+    // Logs showing non empty newLivetreams array when there are no new livestreams can happen
+    // due to the API returning livestreams that are missing data and where therefore never saved to the database.
+
+
+    const existingLivestreams = await Livestream.find({ videoId: { $in: Array.from(videoIdSet) } });
+    const newLivestreams = videoResponse.data.items.filter(video =>
+      !existingLivestreams.some(existing => existing.videoId === video.id)
+    )
+
+    console.log(`Of the ${videoResponse.data.items.length} videos fetched, ${newLivestreams.length} are new livestreams not in the database`);
+
+    for (const broadcast of newLivestreams) {
+
+      if (!broadcast.id) {
+        logger.warn(`Broadcast ID is missing, skipping broadcast with title ${broadcast?.snippet?.title}`);
+        continue;
+      }
+      if (
+        broadcast?.liveStreamingDetails?.scheduledStartTime &&
+        broadcast?.liveStreamingDetails?.actualStartTime
+      ) {
+        const lateTime = calculateLateTime(
+          broadcast.liveStreamingDetails.scheduledStartTime,
+          broadcast.liveStreamingDetails.actualStartTime
+        );
+        
+        // Calculate day of week for scheduled start time
+        const scheduledDate = new Date(Date.parse(broadcast.liveStreamingDetails.scheduledStartTime));
+        
+        livestreamDocuments.push({
+          videoId: broadcast.id,
+          scheduledStartTime: scheduledDate,
+          actualStartTime: new Date(Date.parse(broadcast.liveStreamingDetails.actualStartTime)),
+          lateTime,
+          title: broadcast?.snippet?.title || 'No title available',
+        });
+        continue;
+      }
+      logger.debug(`Broadcast with ID ${broadcast.id} and title ${broadcast?.snippet?.title} does not have scheduled or actual start time, skipping.`);
+    }
+    logger.info(`${livestreamDocuments.length} livestream documents built.`);
+    return livestreamDocuments;
+}
 
 // Also add API for which day of the week has the highest average late time, and how much. This will need an inintialize function (with the hard/recent option),
 // and also a function to process a single livestream, which will be used in the webhook handler.
-
-
-
 
 
 export const handleInitialize = async (req: Request, res: Response): Promise<void> => {
@@ -58,20 +114,9 @@ export const handleInitialize = async (req: Request, res: Response): Promise<voi
   let nextPageToken: string | undefined;
   let videoIdSet = new Set<string>();
   const livestreamDocuments: ILivestream[] = [];
-  let streamCount = 0;
   let totalLateTime = 0;
-  let maxLateTime = 0;
   
-  // Track late time by day of week (0 = Sunday, 1 = Monday, etc.)
-  const dailyStats = {
-    0: { totalTime: 0, count: 0 }, // Sunday
-    1: { totalTime: 0, count: 0 }, // Monday
-    2: { totalTime: 0, count: 0 }, // Tuesday
-    3: { totalTime: 0, count: 0 }, // Wednesday
-    4: { totalTime: 0, count: 0 }, // Thursday
-    5: { totalTime: 0, count: 0 }, // Friday
-    6: { totalTime: 0, count: 0 }, // Saturday
-  };
+
 
   do {
     videoIdSet.clear();
@@ -94,71 +139,16 @@ export const handleInitialize = async (req: Request, res: Response): Promise<voi
       }
     }
 
-    // Now that we have a unique set of video IDs, we can fetch their details
-    const videoResponse = await youtube.videos.list({
-      part: ['snippet', 'liveStreamingDetails'],
-      id: Array.from(videoIdSet),
-    });
-
-    logger.info(`Fetched livestream details for ${videoResponse.data.items?.length} videos`);
-
-    if (!videoResponse.data.items || videoResponse.data.items.length === 0) {
-      logger.warn(`No livestream data found in the video.list API for current page`);
+    const newLivestreams = await processVideoIds(videoIdSet);
+    if (!newLivestreams || newLivestreams.length === 0) {
+      logger.info('No new livestreams found in this batch, ending initialization early.');
       continue;
     }
 
-
-    // Filter out livestreams that already exist in the database to avoid 
-    // messing up the stats.
-    // Logs showing non empty newLivetreams array when there are no new livestreams can happen
-    // due to the API returning livestreams that are missing data and where therefore never saved to the database.
-
-
-    const existingLivestreams = await Livestream.find({ videoId: { $in: Array.from(videoIdSet) } });
-    const newLivestreams = videoResponse.data.items.filter(video =>
-      !existingLivestreams.some(existing => existing.videoId === video.id)
-    )
-
-    console.log(`Of the ${videoResponse.data.items.length} videos fetched, ${newLivestreams.length} are new livestreams not in the database`);
-
-    for (const broadcast of newLivestreams) {
-      if (!broadcast.id) {
-        logger.warn(`Broadcast ID is missing, skipping broadcast with title ${broadcast?.snippet?.title}`);
-        continue;
-      }
-      if (
-        broadcast?.liveStreamingDetails?.scheduledStartTime &&
-        broadcast?.liveStreamingDetails?.actualStartTime
-      ) {
-        const lateTime = calculateLateTime(
-          broadcast.liveStreamingDetails.scheduledStartTime,
-          broadcast.liveStreamingDetails.actualStartTime
-        );
-        
-        // Update total late time
-        totalLateTime += lateTime;
-        
-        // Update max late time
-        if (lateTime > maxLateTime) {
-          maxLateTime = lateTime;
-        }
-        
-        // Calculate day of week for scheduled start time
-        const scheduledDate = new Date(Date.parse(broadcast.liveStreamingDetails.scheduledStartTime));
-        
-        livestreamDocuments.push({
-          videoId: broadcast.id,
-          scheduledStartTime: scheduledDate,
-          actualStartTime: new Date(Date.parse(broadcast.liveStreamingDetails.actualStartTime)),
-          lateTime,
-          title: broadcast?.snippet?.title || 'No title available',
-        });
-        continue;
-      }
-      logger.debug(`Broadcast with ID ${broadcast.id} and title ${broadcast?.snippet?.title} does not have scheduled or actual start time, skipping.`);
-    }
+    totalLateTime = newLivestreams.reduce((sum, ls) => sum + ls.lateTime, 0);
+    livestreamDocuments.push(...newLivestreams);
     nextPageToken = response.data.nextPageToken as string | undefined;
-    logger.info(`${livestreamDocuments.length} livestream documents built so far... nextPageToken: ${nextPageToken}`);
+
   } while (nextPageToken);
 
   
@@ -194,4 +184,54 @@ export const handleInitialize = async (req: Request, res: Response): Promise<voi
   }
 
 
+};
+
+export const handleInitializeByVideoIds = async (req: Request, res: Response): Promise<void> => {
+  const { videoIds } = req.body;
+  if (!videoIds || !Array.isArray(videoIds) || videoIds.length === 0) {
+    res.status(400).json({ error: 'videoIds must be a non-empty array' });
+    return;
+  }
+
+  const BULK_LIMIT = 50;
+  const livestreamDocuments: ILivestream[] = [];
+  const nonduplicateVideoIdsArray = Array.from(new Set(videoIds));
+
+  for (let i = 0; i < nonduplicateVideoIdsArray.length; i += BULK_LIMIT) {
+    const chunk = nonduplicateVideoIdsArray.slice(i, i + BULK_LIMIT);
+    const newLivestreams = await processVideoIds(new Set(chunk));
+    livestreamDocuments.push(...newLivestreams);
+  }
+
+  if (!livestreamDocuments || livestreamDocuments.length === 0) {
+    logger.info('No new livestreams found for the provided video IDs');
+    res.status(200).json({ message: 'No new livestreams found' });
+    return;
+  }
+
+  logger.info(`Found ${livestreamDocuments.length} new livestreams for the provided video IDs`);
+  await gracefulBulkInsert(livestreamDocuments as unknown as ILivestream[]);
+  await updateStats(livestreamDocuments as unknown as ILivestream[]);
+
+  const updatedStats = await Stats.findOne({}).lean();
+
+  if (!updatedStats && livestreamDocuments.length === 0) {
+    let errorMessage = 'No livestreams processed and no stats found in the database';
+    logger.error(errorMessage);
+    res.status(500).json({ error: errorMessage });
+  } else if (!updatedStats && livestreamDocuments.length > 0) {
+    let errorMessage = 'New livestreams were processed but no stats found in the database. This is should not happen.';
+    logger.error(errorMessage);
+    res.status(500).json({ error: errorMessage });
+  } else if (updatedStats) {
+    res.status(200).json({
+      message: `Initialization by videoIds complete. Found ${livestreamDocuments.length} new livestreams and updated stats.`,
+      streamCount: updatedStats.streamCount,
+      totalLateTime: updatedStats.totalLateTime,
+      averageLateTime: updatedStats.averageLateTime,
+      mostRecent: updatedStats.mostRecent,
+      max: updatedStats.max,
+      daily: updatedStats.daily,
+  });
+  }
 };
