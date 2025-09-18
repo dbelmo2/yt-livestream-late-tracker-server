@@ -54,11 +54,17 @@ const processVideoIds = async (videoIdSet: Set<string>  ) => {
 
 
     const existingLivestreams = await Livestream.find({ videoId: { $in: Array.from(videoIdSet) } });
+
+    for (const existing of existingLivestreams) {
+      logger.warn(`Existing livestream found in DB: videoId=${existing.videoId}, title=${existing.title}`);
+    }
+
+
     const newLivestreams = videoResponse.data.items.filter(video =>
       !existingLivestreams.some(existing => existing.videoId === video.id)
     )
 
-    console.log(`Of the ${videoResponse.data.items.length} videos fetched, ${newLivestreams.length} are new livestreams not in the database`);
+    logger.info(`Of the ${videoResponse.data.items.length} videos fetched, ${newLivestreams.length} are new livestreams not in the database`);
 
     for (const broadcast of newLivestreams) {
 
@@ -87,7 +93,7 @@ const processVideoIds = async (videoIdSet: Set<string>  ) => {
         });
         continue;
       }
-      logger.debug(`Broadcast with ID ${broadcast.id} and title ${broadcast?.snippet?.title} does not have scheduled or actual start time, skipping.`);
+      logger.warn(`Broadcast with ID ${broadcast.id} and title ${broadcast?.snippet?.title} does not have scheduled or actual start time, skipping.`);
     }
     logger.info(`${livestreamDocuments.length} livestream documents built.`);
     return livestreamDocuments;
