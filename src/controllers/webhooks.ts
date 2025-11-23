@@ -38,6 +38,10 @@ const verifySignature = (req: Request) => {
 
 
 
+// NOTE: !!! Member streams are picked up so long as the webhook is active and listening, but they are not returned by the
+// uploads playlist... !!!
+//
+// TODO: Update to skip scheduled videos/vods.. This should only process live streams. 
 export const handleWebhook = async (req: Request, res: Response): Promise<void> => {
   if (req.method === 'GET') {
     const challenge = req.query['hub.challenge'] as string;
@@ -76,7 +80,8 @@ export const handleWebhook = async (req: Request, res: Response): Promise<void> 
       const entry = result.feed.entry?.[0];
       if (entry) {
         const videoId = entry['yt:videoId']?.[0];
-        await processLivestream(videoId);
+        logger.info(`calling processLivestream with videoid '${videoId}' from webhook`);
+        await processLivestream(videoId, true);
       }
     } catch (error) {
       // Log error but don't send another response, unless Invalid XML
