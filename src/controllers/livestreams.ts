@@ -21,6 +21,7 @@ export const getLivestreams = async (req: Request, res: Response): Promise<void>
     // Fetch paginated livestreams using skip and limit
     const skip = req.query.skip ? parseInt(req.query.skip as string) : 0;
     const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+    const order = req.query.order === 'asc' ? 1 : -1; // Default to descending order
 
     logger.debug(`Pagination parameters: skip=${skip}, limit=${limit}`);
 
@@ -31,7 +32,11 @@ export const getLivestreams = async (req: Request, res: Response): Promise<void>
       throw new ValidationError('Invalid limit parameter: must be a positive number');
     }
 
-    const livestreams = await Livestream.find({}, null, { skip, limit }).catch((err) => {
+    if (order !== 1 && order !== -1) {
+      throw new ValidationError('Invalid order parameter: must be "asc" or "desc"');
+    }
+
+    const livestreams = await Livestream.find({}, null, { skip, limit, sort: { actualStartTime: order } }).catch((err) => {
         throw new ApiError(`Database query failed: ${err.message}`, 500);
     });
 
